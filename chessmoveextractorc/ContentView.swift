@@ -41,55 +41,55 @@ struct RecordingView: View {
     
     var body: some View {
         ZStack {
-            if cameraManager.isSessionReady {
-                CameraPreviewView(session: cameraManager.session)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .edgesIgnoringSafeArea(.all)
-                
-                if cameraManager.isRecording && cameraManager.isChessBoardDetected && cameraManager.detectionConfidence >= confidenceThreshold {
-                    VStack {
-                        VStack(spacing: 4) {
-                            Text("Chess Board Detected")
-                                .font(.headline)
-                            Text("Confidence: \(Int(cameraManager.detectionConfidence * 100))%")
-                                .font(.subheadline)
-                                .foregroundColor(.green)
-                        }
-                        .padding()
-                        .background(Color.black.opacity(0.7))
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
-                        .padding(.top, 50)
-                        Spacer()
-                    }
-                }
-                
-                VStack {
-                    Spacer()
-                    HStack {
-                        Button(action: {
-                            if cameraManager.isRecording {
-                                cameraManager.stopRecording()
-                            } else {
-                                cameraManager.startRecording()
-                            }
-                        }) {
-                            Image(systemName: cameraManager.isRecording ? "stop.circle.fill" : "record.circle")
-                                .font(.system(size: 64))
-                                .foregroundColor(cameraManager.isRecording ? .red : .white)
-                        }
-                        .padding()
-                    }
-                    .background(Color.black.opacity(0.8))
-                    .cornerRadius(15)
-                    .padding(.bottom, 20)
-                }
-            } else {
+            CameraPreviewView(session: cameraManager.session)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .edgesIgnoringSafeArea(.all)
+            
+            if !cameraManager.isSessionReady {
                 Color.black
                     .edgesIgnoringSafeArea(.all)
                 ProgressView()
                     .progressViewStyle(CircularProgressViewStyle(tint: .white))
                     .scaleEffect(1.5)
+            }
+            
+            if cameraManager.isRecording && cameraManager.isChessBoardDetected && cameraManager.detectionConfidence >= confidenceThreshold {
+                VStack {
+                    VStack(spacing: 4) {
+                        Text("Chess Board Detected")
+                            .font(.headline)
+                        Text("Confidence: \(Int(cameraManager.detectionConfidence * 100))%")
+                            .font(.subheadline)
+                            .foregroundColor(.green)
+                    }
+                    .padding()
+                    .background(Color.black.opacity(0.7))
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                    .padding(.top, 50)
+                    Spacer()
+                }
+            }
+            
+            VStack {
+                Spacer()
+                HStack {
+                    Button(action: {
+                        if cameraManager.isRecording {
+                            cameraManager.stopRecording()
+                        } else {
+                            cameraManager.startRecording()
+                        }
+                    }) {
+                        Image(systemName: cameraManager.isRecording ? "stop.circle.fill" : "record.circle")
+                            .font(.system(size: 64))
+                            .foregroundColor(cameraManager.isRecording ? .red : .white)
+                    }
+                    .padding()
+                }
+                .background(Color.black.opacity(0.8))
+                .cornerRadius(15)
+                .padding(.bottom, 20)
             }
         }
     }
@@ -203,10 +203,89 @@ struct RecordedGamesView: View {
 
 struct VideoPlayerView: View {
     let videoURL: URL
+    @StateObject private var playerManager = VideoPlayerManager()
+    private let confidenceThreshold: Double = 0.7
     
     var body: some View {
-        VideoPlayer(player: AVPlayer(url: videoURL))
-            .edgesIgnoringSafeArea(.all)
+        ZStack {
+            VideoPlayer(player: playerManager.player)
+                .edgesIgnoringSafeArea(.all)
+            
+            if playerManager.isChessBoardDetected && playerManager.detectionConfidence >= confidenceThreshold {
+                VStack {
+                    VStack(spacing: 4) {
+                        Text("Chess Board Detected")
+                            .font(.headline)
+                        Text("Confidence: \(Int(playerManager.detectionConfidence * 100))%")
+                            .font(.subheadline)
+                            .foregroundColor(.green)
+                    }
+                    .padding()
+                    .background(Color.black.opacity(0.7))
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                    .padding(.top, 50)
+                    Spacer()
+                }
+            }
+        }
+        .onAppear {
+            playerManager.setupPlayer(with: videoURL)
+        }
+        .onDisappear {
+            playerManager.cleanup()
+        }
+    }
+}
+
+class VideoPlayerManager: NSObject, ObservableObject {
+    @Published var isChessBoardDetected = false
+    @Published var detectionConfidence: Double = 0.0
+    let player = AVPlayer()
+    private var playerItemOutput: AVPlayerItemVideoOutput?
+    private var displayLink: CADisplayLink?
+    private let chessBoardDetector = ChessBoardDetector()
+    
+    func setupPlayer(with url: URL) {
+        let asset = AVAsset(url: url)
+        let playerItem = AVPlayerItem(asset: asset)
+        
+        // Setup video output for frame processing
+        let videoOutput = AVPlayerItemVideoOutput(pixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
+        ])
+        playerItem.add(videoOutput)
+        self.playerItemOutput = videoOutput
+        
+        // Setup display link for frame processing
+        displayLink = CADisplayLink(target: self, selector: #selector(handleFrame))
+        displayLink?.add(to: .main, forMode: .common)
+        
+        player.replaceCurrentItem(with: playerItem)
+        player.play()
+    }
+    
+    @objc private func handleFrame() {
+        guard let videoOutput = playerItemOutput else { return }
+        
+        let currentTime = CMTime(seconds: CACurrentMediaTime(), preferredTimescale: 600)
+        guard videoOutput.hasNewPixelBuffer(forItemTime: currentTime) else { return }
+        
+        guard let pixelBuffer = videoOutput.copyPixelBuffer(forItemTime: currentTime, itemTimeForDisplay: nil) else { return }
+        
+        let (detected, confidence) = chessBoardDetector.detectChessBoard(in: pixelBuffer)
+        DispatchQueue.main.async {
+            self.isChessBoardDetected = detected
+            self.detectionConfidence = confidence
+        }
+    }
+    
+    func cleanup() {
+        displayLink?.invalidate()
+        displayLink = nil
+        playerItemOutput = nil
+        player.pause()
+        player.replaceCurrentItem(with: nil)
     }
 }
 
@@ -235,24 +314,7 @@ class CameraManager: NSObject, ObservableObject {
     
     override init() {
         super.init()
-        checkPermissions()
-    }
-    
-    func checkPermissions() {
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized:
-            setupCamera()
-        case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
-                if granted {
-                    DispatchQueue.main.async {
-                        self?.setupCamera()
-                    }
-                }
-            }
-        default:
-            break
-        }
+        setupCamera()
     }
     
     private func setupCamera() {
