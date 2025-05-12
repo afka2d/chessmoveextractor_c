@@ -313,10 +313,16 @@ class VideoPlayerManager: NSObject, ObservableObject {
     private var lastMoveTime: Double = 0
     private var moveCounter = 0
     private var lastBoardState: [[String]] = []
+    private var playerItem: AVPlayerItem?
     
     func setupPlayer(with url: URL) {
+        // Clean up any existing resources
+        cleanup()
+        
+        // Create asset and player item
         let asset = AVAsset(url: url)
         let playerItem = AVPlayerItem(asset: asset)
+        self.playerItem = playerItem
         
         // Setup video output for frame processing
         let videoOutput = AVPlayerItemVideoOutput(pixelBufferAttributes: [
@@ -325,20 +331,44 @@ class VideoPlayerManager: NSObject, ObservableObject {
         playerItem.add(videoOutput)
         self.playerItemOutput = videoOutput
         
+        // Create and configure player
+        let newPlayer = AVPlayer(playerItem: playerItem)
+        
         // Setup display link for frame processing
         displayLink = CADisplayLink(target: self, selector: #selector(handleFrame))
         displayLink?.add(to: .main, forMode: .common)
         
-        let newPlayer = AVPlayer(playerItem: playerItem)
+        // Update UI on main thread
         DispatchQueue.main.async {
             self.player = newPlayer
             self.player?.play()
+        }
+        
+        // Add observer for player item status
+        playerItem.addObserver(self, forKeyPath: "status", options: [.new, .old], context: nil)
+    }
+    
+    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
+        if keyPath == "status",
+           let playerItem = object as? AVPlayerItem {
+            switch playerItem.status {
+            case .failed:
+                print("Player item failed: \(String(describing: playerItem.error))")
+                cleanup()
+            case .readyToPlay:
+                print("Player item ready to play")
+            case .unknown:
+                print("Player item status unknown")
+            @unknown default:
+                break
+            }
         }
     }
     
     @objc private func handleFrame() {
         guard let videoOutput = playerItemOutput,
-              let currentTime = player?.currentTime() else { return }
+              let player = player,
+              let currentTime = player.currentItem?.currentTime() else { return }
         
         let itemTime = CMTime(seconds: currentTime.seconds, preferredTimescale: 600)
         guard videoOutput.hasNewPixelBuffer(forItemTime: itemTime) else { return }
@@ -398,11 +428,34 @@ class VideoPlayerManager: NSObject, ObservableObject {
     }
     
     func cleanup() {
+        // Remove observer
+        if let playerItem = playerItem {
+            playerItem.removeObserver(self, forKeyPath: "status")
+        }
+        
+        // Invalidate display link
         displayLink?.invalidate()
         displayLink = nil
-        playerItemOutput = nil
+        
+        // Clean up player
         player?.pause()
         player = nil
+        
+        // Clean up outputs
+        playerItemOutput = nil
+        playerItem = nil
+        
+        // Reset state
+        isChessBoardDetected = false
+        detectionConfidence = 0.0
+        detectedMoves = []
+        lastMoveTime = 0
+        moveCounter = 0
+        lastBoardState = []
+    }
+    
+    deinit {
+        cleanup()
     }
 }
 
