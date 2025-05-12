@@ -101,6 +101,9 @@ struct RecordedGamesView: View {
     @State private var showingDeleteAlert = false
     @State private var gameToShare: URL?
     @State private var showingShareSheet = false
+    @State private var isProcessingShare = false
+    @State private var shareError: String?
+    @State private var showingShareError = false
     
     var body: some View {
         NavigationView {
@@ -129,14 +132,19 @@ struct RecordedGamesView: View {
                         Spacer()
                         
                         Button {
-                            gameToShare = game.url
-                            showingShareSheet = true
+                            handleShare(for: game)
                         } label: {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.title2)
-                                .foregroundColor(.blue)
+                            if isProcessingShare {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                            } else {
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.title2)
+                                    .foregroundColor(.blue)
+                            }
                         }
                         .buttonStyle(BorderlessButtonStyle())
+                        .disabled(isProcessingShare)
                     }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
@@ -163,6 +171,15 @@ struct RecordedGamesView: View {
                 }
             } message: {
                 Text("Are you sure you want to delete this game? This action cannot be undone.")
+            }
+            .alert("Share Error", isPresented: $showingShareError) {
+                Button("OK", role: .cancel) {
+                    shareError = nil
+                }
+            } message: {
+                if let error = shareError {
+                    Text(error)
+                }
             }
             .sheet(isPresented: $showingShareSheet) {
                 if let url = gameToShare {
@@ -221,6 +238,214 @@ struct RecordedGamesView: View {
             print("Error deleting game: \(error)")
         }
     }
+    
+    private func handleShare(for game: RecordedGame) {
+        // Check if file exists
+        guard FileManager.default.fileExists(atPath: game.url.path) else {
+            shareError = "Video file not found"
+            showingShareError = true
+            return
+        }
+        
+        // Check if file is readable
+        guard FileManager.default.isReadableFile(atPath: game.url.path) else {
+            shareError = "Cannot read video file"
+            showingShareError = true
+            return
+        }
+        
+        if game.hasChessBoard {
+            isProcessingShare = true
+            createVideoWithOverlay(from: game.url) { processedURL in
+                DispatchQueue.main.async {
+                    isProcessingShare = false
+                    if let url = processedURL {
+                        gameToShare = url
+                        showingShareSheet = true
+                    } else {
+                        shareError = "Failed to process video for sharing"
+                        showingShareError = true
+                    }
+                }
+            }
+        } else {
+            gameToShare = game.url
+            showingShareSheet = true
+        }
+    }
+    
+    private func createOverlayImage(for videoSize: CGSize) -> CIImage {
+        let text = "Chess Board Detected"
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.boldSystemFont(ofSize: 36),
+            .foregroundColor: UIColor.white
+        ]
+        
+        let textSize = text.size(withAttributes: attributes)
+        let padding: CGFloat = 20
+        let backgroundRect = CGRect(
+            x: 0,
+            y: 0,
+            width: textSize.width + (padding * 2),
+            height: textSize.height + (padding * 2)
+        )
+        
+        UIGraphicsBeginImageContextWithOptions(backgroundRect.size, false, 0)
+        
+        // Draw background
+        let backgroundPath = UIBezierPath(roundedRect: backgroundRect, cornerRadius: 10)
+        UIColor.black.withAlphaComponent(0.7).setFill()
+        backgroundPath.fill()
+        
+        // Draw text
+        let textRect = CGRect(
+            x: padding,
+            y: padding,
+            width: textSize.width,
+            height: textSize.height
+        )
+        text.draw(in: textRect, withAttributes: attributes)
+        
+        let overlayImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        
+        if let overlayImage = overlayImage,
+           let overlayCIImage = CIImage(image: overlayImage) {
+            // Calculate scale factor based on video size
+            let scaleFactor = min(videoSize.width / backgroundRect.width, videoSize.height / backgroundRect.height) * 0.2
+            
+            // Scale the overlay
+            let scale = CIFilter(name: "CILanczosScaleTransform")
+            scale?.setValue(overlayCIImage, forKey: kCIInputImageKey)
+            scale?.setValue(scaleFactor, forKey: kCIInputScaleKey)
+            
+            if let scaledImage = scale?.outputImage {
+                // Position the overlay in the top-left corner
+                let transform = CIFilter(name: "CIAffineTransform")
+                transform?.setValue(scaledImage, forKey: kCIInputImageKey)
+                transform?.setValue(CGAffineTransform(translationX: 20, y: videoSize.height - scaledImage.extent.height - 20), forKey: kCIInputTransformKey)
+                
+                return transform?.outputImage ?? overlayCIImage
+            }
+            return overlayCIImage
+        }
+        
+        return CIImage(color: .clear)
+    }
+    
+    private func createVideoWithOverlay(from sourceURL: URL, completion: @escaping (URL?) -> Void) {
+        // Verify source file exists and is readable
+        guard FileManager.default.fileExists(atPath: sourceURL.path),
+              FileManager.default.isReadableFile(atPath: sourceURL.path) else {
+            print("Source video file not found or not readable")
+            completion(nil)
+            return
+        }
+        
+        let asset = AVAsset(url: sourceURL)
+        let composition = AVMutableComposition()
+        
+        // Load tracks asynchronously
+        let group = DispatchGroup()
+        group.enter()
+        
+        var videoTrack: AVAssetTrack?
+        var audioTrack: AVAssetTrack?
+        
+        asset.loadValuesAsynchronously(forKeys: ["tracks"]) {
+            defer { group.leave() }
+            
+            var error: NSError?
+            let status = asset.statusOfValue(forKey: "tracks", error: &error)
+            
+            guard status == .loaded else {
+                print("Error loading asset tracks: \(error?.localizedDescription ?? "Unknown error")")
+                return
+            }
+            
+            videoTrack = asset.tracks(withMediaType: .video).first
+            audioTrack = asset.tracks(withMediaType: .audio).first
+        }
+        
+        group.notify(queue: .main) {
+            guard let videoTrack = videoTrack,
+                  let compositionVideoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
+                print("Failed to setup video track")
+                completion(nil)
+                return
+            }
+            
+            do {
+                // Add video track
+                try compositionVideoTrack.insertTimeRange(CMTimeRange(start: .zero, duration: asset.duration), of: videoTrack, at: .zero)
+                
+                // Add audio track if available
+                if let audioTrack = audioTrack,
+                   let compositionAudioTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
+                    try compositionAudioTrack.insertTimeRange(CMTimeRange(start: .zero, duration: asset.duration), of: audioTrack, at: .zero)
+                }
+                
+                // Get video dimensions
+                let videoSize = videoTrack.naturalSize
+                
+                // Create video composition
+                let videoComposition = AVMutableVideoComposition(asset: composition) { request in
+                    let source = request.sourceImage.clampedToExtent()
+                    
+                    // Create overlay with proper dimensions
+                    let overlay = self.createOverlayImage(for: videoSize)
+                    
+                    // Composite overlay onto source image
+                    let finalImage = source.composited(over: overlay)
+                    request.finish(with: finalImage, context: nil)
+                }
+                
+                // Set video composition render size
+                videoComposition.renderSize = videoSize
+                videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+                
+                // Configure export session
+                guard let exportSession = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
+                    print("Failed to create export session")
+                    completion(nil)
+                    return
+                }
+                
+                exportSession.videoComposition = videoComposition
+                
+                // Create output URL
+                let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent("chess_game_with_overlay_\(Date().timeIntervalSince1970).mov")
+                
+                // Remove existing file if it exists
+                try? FileManager.default.removeItem(at: outputURL)
+                
+                exportSession.outputURL = outputURL
+                exportSession.outputFileType = .mov
+                exportSession.shouldOptimizeForNetworkUse = true
+                
+                // Start export
+                exportSession.exportAsynchronously {
+                    switch exportSession.status {
+                    case .completed:
+                        print("Video export completed successfully")
+                        completion(outputURL)
+                    case .failed:
+                        print("Video export failed: \(exportSession.error?.localizedDescription ?? "Unknown error")")
+                        completion(nil)
+                    case .cancelled:
+                        print("Video export cancelled")
+                        completion(nil)
+                    default:
+                        print("Video export status: \(exportSession.status.rawValue)")
+                        completion(nil)
+                    }
+                }
+            } catch {
+                print("Error creating video with overlay: \(error.localizedDescription)")
+                completion(nil)
+            }
+        }
+    }
 }
 
 struct VideoPlayerView: View {
@@ -233,12 +458,28 @@ struct VideoPlayerView: View {
             if let player = playerManager.player {
                 VideoPlayer(player: player)
                     .edgesIgnoringSafeArea(.all)
+                    .onDisappear {
+                        playerManager.cleanup()
+                    }
             } else {
                 Color.black
                     .edgesIgnoringSafeArea(.all)
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    .scaleEffect(1.5)
+                if let error = playerManager.error {
+                    VStack {
+                        Text("Error playing video")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        Text(error.localizedDescription)
+                            .font(.subheadline)
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                            .padding()
+                    }
+                } else {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(1.5)
+                }
             }
             
             VStack {
@@ -289,9 +530,6 @@ struct VideoPlayerView: View {
         .onAppear {
             playerManager.setupPlayer(with: videoURL)
         }
-        .onDisappear {
-            playerManager.cleanup()
-        }
     }
 }
 
@@ -307,17 +545,27 @@ class VideoPlayerManager: NSObject, ObservableObject {
     @Published var detectionConfidence: Double = 0.0
     @Published var detectedMoves: [ChessMove] = []
     @Published var player: AVPlayer?
+    @Published var error: Error?
+    private var playerItem: AVPlayerItem?
+    private var playerItemStatusObserver: NSKeyValueObservation?
     private var playerItemOutput: AVPlayerItemVideoOutput?
     private var displayLink: CADisplayLink?
     private let chessBoardDetector = ChessBoardDetector()
-    private var lastMoveTime: Double = 0
-    private var moveCounter = 0
-    private var lastBoardState: [[String]] = []
-    private var playerItem: AVPlayerItem?
+    private let confidenceThreshold: Double = 0.7
+    private var isProcessingFrame = false
     
     func setupPlayer(with url: URL) {
         // Clean up any existing resources
         cleanup()
+        
+        // Verify file exists and is readable
+        guard FileManager.default.fileExists(atPath: url.path),
+              FileManager.default.isReadableFile(atPath: url.path) else {
+            DispatchQueue.main.async {
+                self.error = NSError(domain: "VideoPlayerError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Video file not found or not readable"])
+            }
+            return
+        }
         
         // Create asset and player item
         let asset = AVAsset(url: url)
@@ -336,102 +584,76 @@ class VideoPlayerManager: NSObject, ObservableObject {
         
         // Setup display link for frame processing
         displayLink = CADisplayLink(target: self, selector: #selector(handleFrame))
+        displayLink?.preferredFramesPerSecond = 10 // Reduce processing frequency
         displayLink?.add(to: .main, forMode: .common)
+        
+        // Add observer for player item status
+        playerItemStatusObserver = playerItem.observe(\.status, options: [.new, .old]) { [weak self] item, _ in
+            DispatchQueue.main.async {
+                switch item.status {
+                case .failed:
+                    print("Player item failed: \(String(describing: item.error))")
+                    self?.error = item.error
+                    self?.cleanup()
+                case .readyToPlay:
+                    print("Player item ready to play")
+                    self?.error = nil
+                case .unknown:
+                    print("Player item status unknown")
+                @unknown default:
+                    break
+                }
+            }
+        }
         
         // Update UI on main thread
         DispatchQueue.main.async {
             self.player = newPlayer
             self.player?.play()
         }
-        
-        // Add observer for player item status
-        playerItem.addObserver(self, forKeyPath: "status", options: [.new, .old], context: nil)
-    }
-    
-    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-        if keyPath == "status",
-           let playerItem = object as? AVPlayerItem {
-            switch playerItem.status {
-            case .failed:
-                print("Player item failed: \(String(describing: playerItem.error))")
-                cleanup()
-            case .readyToPlay:
-                print("Player item ready to play")
-            case .unknown:
-                print("Player item status unknown")
-            @unknown default:
-                break
-            }
-        }
     }
     
     @objc private func handleFrame() {
-        guard let videoOutput = playerItemOutput,
+        // Prevent concurrent frame processing
+        guard !isProcessingFrame,
+              let videoOutput = playerItemOutput,
               let player = player,
               let currentTime = player.currentItem?.currentTime() else { return }
         
+        isProcessingFrame = true
+        
         let itemTime = CMTime(seconds: currentTime.seconds, preferredTimescale: 600)
-        guard videoOutput.hasNewPixelBuffer(forItemTime: itemTime) else { return }
+        guard videoOutput.hasNewPixelBuffer(forItemTime: itemTime) else {
+            isProcessingFrame = false
+            return
+        }
         
-        guard let pixelBuffer = videoOutput.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil) else { return }
+        guard let pixelBuffer = videoOutput.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil) else {
+            isProcessingFrame = false
+            return
+        }
         
-        let (detected, confidence) = chessBoardDetector.detectChessBoard(in: pixelBuffer)
-        let currentBoardState = chessBoardDetector.detectBoardState(in: pixelBuffer)
-        
-        DispatchQueue.main.async {
-            self.isChessBoardDetected = detected
-            self.detectionConfidence = confidence
+        // Process frame in background
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else {
+                self?.isProcessingFrame = false
+                return
+            }
             
-            // Check for moves
-            if detected && confidence >= 0.7 {
-                if let move = self.detectMove(from: self.lastBoardState, to: currentBoardState, at: currentTime.seconds) {
-                    self.detectedMoves.append(move)
-                }
-                self.lastBoardState = currentBoardState
+            let (detected, confidence) = self.chessBoardDetector.detectChessBoard(in: pixelBuffer)
+            
+            DispatchQueue.main.async {
+                self.isChessBoardDetected = detected
+                self.detectionConfidence = confidence
+                self.isProcessingFrame = false
             }
         }
-    }
-    
-    private func detectMove(from oldState: [[String]], to newState: [[String]], at timestamp: Double) -> ChessMove? {
-        // Only detect moves if enough time has passed since last move
-        guard timestamp - lastMoveTime > 1.0 else { return nil }
-        
-        // Find the differences between board states
-        var fromSquare = ""
-        var toSquare = ""
-        var piece = ""
-        
-        for i in 0..<8 {
-            for j in 0..<8 {
-                if oldState[i][j] != newState[i][j] {
-                    if oldState[i][j] != "" {
-                        fromSquare = "\(["a", "b", "c", "d", "e", "f", "g", "h"][j])\(8-i)"
-                        piece = oldState[i][j]
-                    }
-                    if newState[i][j] != "" {
-                        toSquare = "\(["a", "b", "c", "d", "e", "f", "g", "h"][j])\(8-i)"
-                    }
-                }
-            }
-        }
-        
-        if !fromSquare.isEmpty && !toSquare.isEmpty {
-            lastMoveTime = timestamp
-            moveCounter += 1
-            
-            // Create move notation
-            let notation = "\(piece)\(fromSquare)-\(toSquare)"
-            return ChessMove(notation: notation, timestamp: timestamp, moveNumber: moveCounter)
-        }
-        
-        return nil
     }
     
     func cleanup() {
         // Remove observer
-        if let playerItem = playerItem {
-            playerItem.removeObserver(self, forKeyPath: "status")
-        }
+        playerItemStatusObserver?.invalidate()
+        playerItemStatusObserver = nil
         
         // Invalidate display link
         displayLink?.invalidate()
@@ -449,9 +671,8 @@ class VideoPlayerManager: NSObject, ObservableObject {
         isChessBoardDetected = false
         detectionConfidence = 0.0
         detectedMoves = []
-        lastMoveTime = 0
-        moveCounter = 0
-        lastBoardState = []
+        error = nil
+        isProcessingFrame = false
     }
     
     deinit {
@@ -583,6 +804,7 @@ class CameraManager: NSObject, ObservableObject {
     private var currentRecordingHasChessBoard = false
     private var currentRecordingConfidence = 0.0
     private var videoInput: AVCaptureDeviceInput?
+    private var isSessionConfigured = false
     
     override init() {
         super.init()
@@ -607,6 +829,8 @@ class CameraManager: NSObject, ObservableObject {
     }
     
     private func setupCamera() {
+        guard !isSessionConfigured else { return }
+        
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             
@@ -641,22 +865,23 @@ class CameraManager: NSObject, ObservableObject {
             if self.session.canAddOutput(movieOutput) {
                 self.session.addOutput(movieOutput)
                 self.videoOutput = movieOutput
+                
+                // Configure for long recordings
+                if let connection = movieOutput.connection(with: .video) {
+                    if connection.isVideoStabilizationSupported {
+                        connection.preferredVideoStabilizationMode = .auto
+                    }
+                    if connection.isVideoOrientationSupported {
+                        connection.videoOrientation = .portrait
+                    }
+                }
             }
             
-            // Configure session
+            // Configure session for high quality
             self.session.sessionPreset = .high
             
-            // Ensure the video connection is properly configured
-            if let connection = movieOutput.connection(with: .video) {
-                if connection.isVideoStabilizationSupported {
-                    connection.preferredVideoStabilizationMode = .auto
-                }
-                if connection.isVideoOrientationSupported {
-                    connection.videoOrientation = .portrait
-                }
-            }
-            
             self.session.commitConfiguration()
+            self.isSessionConfigured = true
             
             if !self.session.isRunning {
                 self.session.startRunning()
@@ -686,6 +911,9 @@ class CameraManager: NSObject, ObservableObject {
                 connection.videoOrientation = .portrait
             }
         }
+        
+        // Set maximum recording duration to 0 (unlimited)
+        videoOutput.maxRecordedDuration = .zero
         
         DispatchQueue.main.async {
             self.isRecording = true
@@ -721,6 +949,11 @@ extension CameraManager: AVCaptureFileOutputRecordingDelegate {
         
         UserDefaults.standard.set(gameInfo, forKey: outputFileURL.lastPathComponent)
         print("Video saved to: \(outputFileURL)")
+        
+        // Verify the recorded file
+        let asset = AVAsset(url: outputFileURL)
+        let duration = asset.duration.seconds
+        print("Recorded video duration: \(duration) seconds")
     }
 }
 
