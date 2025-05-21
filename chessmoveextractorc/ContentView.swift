@@ -10,6 +10,7 @@ import AVFoundation
 import AVKit
 import Vision
 import CoreImage
+import CoreML
 
 struct RecordedGame: Identifiable {
     let id = UUID()
@@ -17,6 +18,7 @@ struct RecordedGame: Identifiable {
     let creationDate: Date
     let hasChessBoard: Bool
     let confidence: Double
+    let corners: [CGPoint]? // Normalized corners for this recording
 }
 
 struct ContentView: View {
@@ -35,54 +37,207 @@ struct ContentView: View {
     }
 }
 
+struct ChessBoardOverlayView: View {
+    let fen: String?
+    let isBoardDetected: Bool
+    
+    // Cache the board state to avoid recalculating on every render
+    private let boardState: [[String]]
+    
+    init(fen: String?, isBoardDetected: Bool) {
+        self.fen = fen
+        self.isBoardDetected = isBoardDetected
+        
+        // Calculate board state once during initialization
+        if let fen = fen {
+            var board = Array(repeating: Array(repeating: "", count: 8), count: 8)
+            let parts = fen.split(separator: " ")
+            if let position = parts.first {
+                let ranks = position.split(separator: "/")
+                for (row, rank) in ranks.enumerated() {
+                    var col = 0
+                    for char in rank {
+                        if let number = Int(String(char)) {
+                            col += number
+                        } else {
+                            board[row][col] = String(char)
+                            col += 1
+                        }
+                    }
+                }
+            }
+            self.boardState = board
+        } else {
+            self.boardState = Array(repeating: Array(repeating: "", count: 8), count: 8)
+        }
+    }
+    
+    var body: some View {
+        if !isBoardDetected {
+            Text("No Chess Board Detected")
+                .font(.headline)
+                .foregroundColor(.white)
+                .padding()
+                .background(Color.black.opacity(0.7))
+                .cornerRadius(10)
+        } else {
+            VStack(spacing: 0) {
+                ForEach(0..<8, id: \.self) { row in
+                    HStack(spacing: 0) {
+                        ForEach(0..<8, id: \.self) { col in
+                            let isLightSquare = (row + col) % 2 == 0
+                            let piece = boardState[row][col]
+                            
+                            ZStack {
+                                Rectangle()
+                                    .fill(isLightSquare ? Color.white.opacity(0.3) : Color.black.opacity(0.3))
+                                    .aspectRatio(1, contentMode: .fit)
+                                
+                                if !piece.isEmpty {
+                                    Text(piece)
+                                        .font(.system(size: 24, weight: .bold))
+                                        .foregroundColor(piece == piece.uppercased() ? .white : .black)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .background(Color.gray.opacity(0.3))
+            .cornerRadius(8)
+            .padding()
+        }
+    }
+}
+
+struct MoveOverlayView: View {
+    let move: String
+    
+    var body: some View {
+        VStack {
+            Text(move)
+                .font(.system(size: 40, weight: .bold, design: .monospaced))
+                .foregroundColor(.yellow)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 12)
+                .background(Color.black.opacity(0.7))
+                .cornerRadius(16)
+                .shadow(radius: 8)
+                .id(move)
+                .transition(.scale.combined(with: .opacity))
+                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: move)
+            Spacer()
+        }
+        .padding(.top, 60)
+    }
+}
+
+struct RecordingControlsView: View {
+    let isRecording: Bool
+    let onRecordToggle: () -> Void
+    
+    var body: some View {
+        HStack {
+            Button(action: onRecordToggle) {
+                Image(systemName: isRecording ? "stop.circle.fill" : "record.circle")
+                    .font(.system(size: 64))
+                    .foregroundColor(isRecording ? .red : .white)
+            }
+            .padding()
+        }
+        .background(Color.black.opacity(0.8))
+        .cornerRadius(15)
+        .padding(.bottom, 20)
+    }
+}
+
+struct DebugOverlayView: View {
+    let lastFEN: String?
+    let isProcessing: Bool
+    let lastAPICallTime: Date
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("API Status: \(isProcessing ? "Processing..." : "Ready")")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(isProcessing ? .yellow : .green)
+            
+            if let fen = lastFEN {
+                Text("Position: \(fen)")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(.white)
+            }
+            
+            Text("Last Call: \(lastAPICallTime.formatted(.dateTime.hour().minute().second()))")
+                .font(.system(size: 12))
+                .foregroundColor(.gray)
+        }
+        .padding(8)
+        .background(Color.black.opacity(0.7))
+        .cornerRadius(8)
+    }
+}
+
 struct RecordingView: View {
     @StateObject private var cameraManager = CameraManager()
-    private let confidenceThreshold: Double = 0.7 // 70% confidence threshold
+    @Namespace private var moveNamespace
     
     var body: some View {
         ZStack {
             if cameraManager.isSessionReady {
-                CameraPreviewView(session: cameraManager.session)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .edgesIgnoringSafeArea(.all)
-                
-                if cameraManager.isRecording && cameraManager.isChessBoardDetected && cameraManager.detectionConfidence >= confidenceThreshold {
-                    VStack {
-                        VStack(spacing: 4) {
-                            Text("Chess Board Detected")
-                                .font(.headline)
-                            Text("Confidence: \(Int(cameraManager.detectionConfidence * 100))%")
-                                .font(.subheadline)
-                                .foregroundColor(.green)
+                GeometryReader { geo in
+        ZStack {
+            CameraPreviewView(session: cameraManager.session)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .edgesIgnoringSafeArea(.all)
+            
+                        // Chess board overlay
+            VStack {
+                            ChessBoardOverlayView(
+                                fen: cameraManager.lastFEN,
+                                isBoardDetected: cameraManager.isChessBoardDetected
+                            )
+                            .frame(width: geo.size.width * 0.8)
+                            .padding(.top, 50)
+                            
+                Spacer()
                         }
-                        .padding()
-                        .background(Color.black.opacity(0.7))
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
-                        .padding(.top, 50)
-                        Spacer()
-                    }
-                }
-                
-                VStack {
-                    Spacer()
-                    HStack {
-                        Button(action: {
-                            if cameraManager.isRecording {
-                                cameraManager.stopRecording()
-                            } else {
-                                cameraManager.startRecording()
+                        
+                        // Debug overlay
+                        VStack {
+                HStack {
+                                Spacer()
+                                DebugOverlayView(
+                                    lastFEN: cameraManager.lastFEN,
+                                    isProcessing: cameraManager.isProcessing,
+                                    lastAPICallTime: cameraManager.lastAPICallTime
+                                )
+                                .padding(.top, 50)
+                                .padding(.trailing, 20)
                             }
-                        }) {
-                            Image(systemName: cameraManager.isRecording ? "stop.circle.fill" : "record.circle")
-                                .font(.system(size: 64))
-                                .foregroundColor(cameraManager.isRecording ? .red : .white)
+                            Spacer()
                         }
-                        .padding()
+                        
+                        // Show move overlay during live recording
+                        if let move = cameraManager.currentMove,
+                           cameraManager.isRecording,
+                           cameraManager.isChessBoardDetected {
+                            MoveOverlayView(move: move)
+                        }
+                        
+                        Spacer()
+                        
+                        RecordingControlsView(
+                            isRecording: cameraManager.isRecording,
+                            onRecordToggle: {
+                                if cameraManager.isRecording {
+                            cameraManager.stopRecording()
+                        } else {
+                            cameraManager.startRecording()
+                        }
+                            }
+                        )
                     }
-                    .background(Color.black.opacity(0.8))
-                    .cornerRadius(15)
-                    .padding(.bottom, 20)
                 }
             } else {
                 Color.black
@@ -113,10 +268,10 @@ struct RecordedGamesView: View {
                         NavigationLink(destination: VideoPlayerView(videoURL: game.url)) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(game.url.lastPathComponent)
-                                    .font(.headline)
+                            .font(.headline)
                                 Text(game.creationDate.formatted())
-                                    .font(.subheadline)
-                                    .foregroundColor(.gray)
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
                                 if game.hasChessBoard {
                                     Text("Chess Board Detected (Confidence: \(Int(game.confidence * 100))%)")
                                         .font(.subheadline)
@@ -204,23 +359,20 @@ struct RecordedGamesView: View {
                 }
                 
                 // Load detection status from UserDefaults
-                if let gameInfo = UserDefaults.standard.dictionary(forKey: url.lastPathComponent) {
-                    let hasChessBoard = gameInfo["hasChessBoard"] as? Bool ?? false
-                    let confidence = gameInfo["confidence"] as? Double ?? 0.0
-                    
-                    return RecordedGame(
-                        url: url,
-                        creationDate: creationDate,
-                        hasChessBoard: hasChessBoard,
-                        confidence: confidence
-                    )
+                let gameInfo = UserDefaults.standard.dictionary(forKey: url.lastPathComponent)
+                let hasChessBoard = gameInfo?["hasChessBoard"] as? Bool ?? false
+                let confidence = gameInfo?["confidence"] as? Double ?? 0.0
+                var corners: [CGPoint]? = nil
+                if let arr = gameInfo?["corners"] as? [[Double]], arr.count == 4 {
+                    corners = arr.map { CGPoint(x: $0[0], y: $0[1]) }
                 }
                 
                 return RecordedGame(
                     url: url,
                     creationDate: creationDate,
-                    hasChessBoard: false,
-                    confidence: 0.0
+                    hasChessBoard: hasChessBoard,
+                    confidence: confidence,
+                    corners: corners
                 )
             }
             .sorted { $0.creationDate > $1.creationDate }
@@ -290,47 +442,46 @@ struct RecordedGamesView: View {
             height: textSize.height + (padding * 2)
         )
         
-        UIGraphicsBeginImageContextWithOptions(backgroundRect.size, false, 0)
-        
-        // Draw background
-        let backgroundPath = UIBezierPath(roundedRect: backgroundRect, cornerRadius: 10)
-        UIColor.black.withAlphaComponent(0.7).setFill()
-        backgroundPath.fill()
-        
-        // Draw text
-        let textRect = CGRect(
-            x: padding,
-            y: padding,
-            width: textSize.width,
-            height: textSize.height
-        )
-        text.draw(in: textRect, withAttributes: attributes)
-        
-        let overlayImage = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
-        
-        if let overlayImage = overlayImage,
-           let overlayCIImage = CIImage(image: overlayImage) {
-            // Calculate scale factor based on video size
-            let scaleFactor = min(videoSize.width / backgroundRect.width, videoSize.height / backgroundRect.height) * 0.2
+        let renderer = UIGraphicsImageRenderer(size: backgroundRect.size)
+        let image = renderer.image { context in
+            // Draw background
+            let backgroundPath = UIBezierPath(roundedRect: backgroundRect, cornerRadius: 10)
+            UIColor.black.withAlphaComponent(0.7).setFill()
+            backgroundPath.fill()
             
-            // Scale the overlay
-            let scale = CIFilter(name: "CILanczosScaleTransform")
-            scale?.setValue(overlayCIImage, forKey: kCIInputImageKey)
-            scale?.setValue(scaleFactor, forKey: kCIInputScaleKey)
-            
-            if let scaledImage = scale?.outputImage {
-                // Position the overlay in the top-left corner
-                let transform = CIFilter(name: "CIAffineTransform")
-                transform?.setValue(scaledImage, forKey: kCIInputImageKey)
-                transform?.setValue(CGAffineTransform(translationX: 20, y: videoSize.height - scaledImage.extent.height - 20), forKey: kCIInputTransformKey)
-                
-                return transform?.outputImage ?? overlayCIImage
-            }
-            return overlayCIImage
+            // Draw text
+            let textRect = CGRect(
+                x: padding,
+                y: padding,
+                width: textSize.width,
+                height: textSize.height
+            )
+            text.draw(in: textRect, withAttributes: attributes)
         }
         
-        return CIImage(color: .clear)
+        guard let cgImage = image.cgImage else {
+            return CIImage(color: .clear)
+        }
+        
+        let overlayCIImage = CIImage(cgImage: cgImage)
+        
+        // Calculate scale factor based on video size
+        let scaleFactor = min(videoSize.width / backgroundRect.width, videoSize.height / backgroundRect.height) * 0.2
+        
+        // Scale the overlay
+        let scale = CIFilter(name: "CILanczosScaleTransform")
+        scale?.setValue(overlayCIImage, forKey: kCIInputImageKey)
+        scale?.setValue(scaleFactor, forKey: kCIInputScaleKey)
+        
+        if let scaledImage = scale?.outputImage {
+            // Position the overlay in the top-left corner
+            let transform = CIFilter(name: "CIAffineTransform")
+            transform?.setValue(scaledImage, forKey: kCIInputImageKey)
+            transform?.setValue(CGAffineTransform(translationX: 20, y: videoSize.height - scaledImage.extent.height - 20), forKey: kCIInputTransformKey)
+            
+            return transform?.outputImage ?? overlayCIImage
+        }
+        return overlayCIImage
     }
     
     private func createVideoWithOverlay(from sourceURL: URL, completion: @escaping (URL?) -> Void) {
@@ -392,11 +543,33 @@ struct RecordedGamesView: View {
                 let videoComposition = AVMutableVideoComposition(asset: composition) { request in
                     let source = request.sourceImage.clampedToExtent()
                     
-                    // Create overlay with proper dimensions
-                    let overlay = self.createOverlayImage(for: videoSize)
+                    // Create text overlay
+                    let textOverlay = self.createOverlayImage(for: videoSize)
                     
-                    // Composite overlay onto source image
-                    let finalImage = source.composited(over: overlay)
+                    // Create chess board overlay
+                    let chessBoardRenderer = ChessBoardRenderer()
+                    let boardOverlay = chessBoardRenderer.renderBoard()
+                    
+                    // Scale and position the chess board overlay
+                    var finalImage = source
+                    
+                    if let boardOverlay = boardOverlay {
+                        // Scale the board to fit the video width while maintaining aspect ratio
+                        let scale = videoSize.width / boardOverlay.extent.width
+                        let scaledBoard = boardOverlay.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+                        
+                        // Position the board in the center of the video
+                        let xOffset = (videoSize.width - scaledBoard.extent.width) / 2
+                        let yOffset = (videoSize.height - scaledBoard.extent.height) / 2
+                        let positionedBoard = scaledBoard.transformed(by: CGAffineTransform(translationX: xOffset, y: yOffset))
+                        
+                        // Composite the board onto the source image
+                        finalImage = source.composited(over: positionedBoard)
+                    }
+                    
+                    // Add the text overlay
+                    finalImage = finalImage.composited(over: textOverlay)
+                    
                     request.finish(with: finalImage, context: nil)
                 }
                 
@@ -452,15 +625,31 @@ struct VideoPlayerView: View {
     let videoURL: URL
     @StateObject private var playerManager = VideoPlayerManager()
     private let confidenceThreshold: Double = 0.7
+    @State private var lastMoveID: UUID? = nil
+    @Namespace private var moveNamespace
     
     var body: some View {
         ZStack {
             if let player = playerManager.player {
                 VideoPlayer(player: player)
-                    .edgesIgnoringSafeArea(.all)
+            .edgesIgnoringSafeArea(.all)
                     .onDisappear {
                         playerManager.cleanup()
                     }
+                
+                // Add chess board overlay
+                if playerManager.isChessBoardDetected {
+                    VStack {
+                        ChessBoardOverlayView(
+                            fen: playerManager.lastFEN,
+                            isBoardDetected: true
+                        )
+                        .frame(width: UIScreen.main.bounds.width * 0.8)
+                        .padding(.top, 50)
+                        
+                        Spacer()
+                    }
+                }
             } else {
                 Color.black
                     .edgesIgnoringSafeArea(.all)
@@ -482,6 +671,25 @@ struct VideoPlayerView: View {
                 }
             }
             
+            // Overlay most recent move
+            if let move = playerManager.detectedMoves.last {
+                VStack {
+                    Text(move.notation)
+                        .font(.system(size: 40, weight: .bold, design: .monospaced))
+                        .foregroundColor(.yellow)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 12)
+                        .background(Color.black.opacity(0.7))
+                        .cornerRadius(16)
+                        .shadow(radius: 8)
+                        .id(move.id)
+                        .transition(.scale.combined(with: .opacity))
+                        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: move.id)
+                    Spacer()
+                }
+                .padding(.top, 60)
+            }
+            
             VStack {
                 if playerManager.isChessBoardDetected && playerManager.detectionConfidence >= confidenceThreshold {
                     VStack(spacing: 4) {
@@ -497,9 +705,7 @@ struct VideoPlayerView: View {
                     .cornerRadius(10)
                     .padding(.top, 50)
                 }
-                
                 Spacer()
-                
                 if !playerManager.detectedMoves.isEmpty {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 8) {
@@ -540,19 +746,93 @@ struct ChessMove: Identifiable {
     let moveNumber: Int
 }
 
+class ChessBoardRenderer {
+    private let boardSize: CGFloat = 400
+    private let squareSize: CGFloat
+    private let lightSquareColor = UIColor(red: 0.9, green: 0.9, blue: 0.9, alpha: 0.7)
+    private let darkSquareColor = UIColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 0.7)
+    private let ciContext = CIContext()
+    
+    init() {
+        squareSize = boardSize / 8
+    }
+    
+    func renderBoard() -> CIImage? {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: boardSize, height: boardSize))
+        
+        let image = renderer.image { context in
+            // Draw squares
+            for row in 0..<8 {
+                for col in 0..<8 {
+                    let isLightSquare = (row + col) % 2 == 0
+                    let color = isLightSquare ? lightSquareColor : darkSquareColor
+                    color.setFill()
+                    
+                    let rect = CGRect(
+                        x: CGFloat(col) * squareSize,
+                        y: CGFloat(row) * squareSize,
+                        width: squareSize,
+                        height: squareSize
+                    )
+                    context.fill(rect)
+                }
+            }
+            
+            // Draw coordinates
+            let coordinateAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 12),
+                .foregroundColor: UIColor.black
+            ]
+            
+            // Draw file coordinates (a-h)
+            for col in 0..<8 {
+                let file = String(UnicodeScalar(97 + col)!)
+                let text = file as NSString
+                let size = text.size(withAttributes: coordinateAttributes)
+                let x = CGFloat(col) * squareSize + (squareSize - size.width) / 2
+                let y = boardSize - size.height - 2
+                text.draw(at: CGPoint(x: x, y: y), withAttributes: coordinateAttributes)
+            }
+            
+            // Draw rank coordinates (1-8)
+            for row in 0..<8 {
+                let rank = String(8 - row)
+                let text = rank as NSString
+                let size = text.size(withAttributes: coordinateAttributes)
+                let x: CGFloat = 2
+                let y = CGFloat(row) * squareSize + (squareSize - size.height) / 2
+                text.draw(at: CGPoint(x: x, y: y), withAttributes: coordinateAttributes)
+            }
+        }
+        
+        guard let cgImage = image.cgImage else { return nil }
+        return CIImage(cgImage: cgImage)
+    }
+}
+
 class VideoPlayerManager: NSObject, ObservableObject {
     @Published var isChessBoardDetected = false
     @Published var detectionConfidence: Double = 0.0
     @Published var detectedMoves: [ChessMove] = []
     @Published var player: AVPlayer?
     @Published var error: Error?
+    @Published var lastFEN: String?
     private var playerItem: AVPlayerItem?
     private var playerItemStatusObserver: NSKeyValueObservation?
     private var playerItemOutput: AVPlayerItemVideoOutput?
     private var displayLink: CADisplayLink?
     private let chessBoardDetector = ChessBoardDetector()
+    private let chessBoardRenderer = ChessBoardRenderer()
     private let confidenceThreshold: Double = 0.7
     private var isProcessingFrame = false
+    private var currentBoardOverlay: CIImage?
+    private var loadedCorners: [CGPoint]? = nil
+    private var processingQueue = DispatchQueue(label: "com.chess.videoprocessing", qos: .userInitiated)
+    private var lastProcessedTime: CMTime = .zero
+    private let processingInterval: CMTime = CMTime(value: 1, timescale: 1) // Process every second
+    private var fenPositions: [(time: CMTime, fen: String)] = []
+    private var recordingStartTime: Double = 0
+    private var isPlayerReady = false
     
     func setupPlayer(with url: URL) {
         // Clean up any existing resources
@@ -565,6 +845,29 @@ class VideoPlayerManager: NSObject, ObservableObject {
                 self.error = NSError(domain: "VideoPlayerError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Video file not found or not readable"])
             }
             return
+        }
+        
+        // Load FEN positions from UserDefaults
+        let gameKey = "game_\(url.lastPathComponent)"
+        print("Loading FEN positions for game: \(gameKey)")
+        if let gameInfo = UserDefaults.standard.dictionary(forKey: gameKey),
+           let fenPositionsData = gameInfo["fenPositions"] as? [[String: Any]],
+           let startTime = gameInfo["recordingStartTime"] as? Double {
+            recordingStartTime = startTime
+            fenPositions = fenPositionsData.compactMap { data in
+                guard let time = data["time"] as? Double,
+                      let fen = data["fen"] as? String else { return nil }
+                // Convert absolute timestamp to relative timestamp
+                let relativeTime = time - startTime
+                print("Converting timestamp - Absolute: \(time), Start: \(startTime), Relative: \(relativeTime)")
+                return (time: CMTime(seconds: relativeTime, preferredTimescale: 600), fen: fen)
+            }
+            print("Loaded \(fenPositions.count) FEN positions for playback")
+            fenPositions.forEach { position in
+                print("Loaded FEN - Relative Time: \(position.time.seconds), FEN: \(position.fen)")
+            }
+        } else {
+            print("No FEN positions found in UserDefaults for key: \(gameKey)")
         }
         
         // Create asset and player item
@@ -584,7 +887,7 @@ class VideoPlayerManager: NSObject, ObservableObject {
         
         // Setup display link for frame processing
         displayLink = CADisplayLink(target: self, selector: #selector(handleFrame))
-        displayLink?.preferredFramesPerSecond = 10 // Reduce processing frequency
+        displayLink?.preferredFramesPerSecond = 5 // Reduce processing frequency
         displayLink?.add(to: .main, forMode: .common)
         
         // Add observer for player item status
@@ -598,6 +901,7 @@ class VideoPlayerManager: NSObject, ObservableObject {
                 case .readyToPlay:
                     print("Player item ready to play")
                     self?.error = nil
+                    self?.isPlayerReady = true
                 case .unknown:
                     print("Player item status unknown")
                 @unknown default:
@@ -614,40 +918,64 @@ class VideoPlayerManager: NSObject, ObservableObject {
     }
     
     @objc private func handleFrame() {
-        // Prevent concurrent frame processing
+        // Prevent concurrent frame processing and check player readiness
         guard !isProcessingFrame,
+              isPlayerReady,
               let videoOutput = playerItemOutput,
               let player = player,
               let currentTime = player.currentItem?.currentTime() else { return }
         
+        // Check if enough time has passed since last processing
+        guard currentTime - lastProcessedTime >= processingInterval else { return }
+        
         isProcessingFrame = true
+        lastProcessedTime = currentTime
         
-        let itemTime = CMTime(seconds: currentTime.seconds, preferredTimescale: 600)
-        guard videoOutput.hasNewPixelBuffer(forItemTime: itemTime) else {
-            isProcessingFrame = false
-            return
-        }
-        
-        guard let pixelBuffer = videoOutput.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil) else {
-            isProcessingFrame = false
-            return
-        }
-        
-        // Process frame in background
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else {
-                self?.isProcessingFrame = false
-                return
-            }
+        // Move processing to background queue
+        processingQueue.async { [weak self] in
+            guard let self = self else { return }
             
-            let (detected, confidence) = self.chessBoardDetector.detectChessBoard(in: pixelBuffer)
-            
-            DispatchQueue.main.async {
-                self.isChessBoardDetected = detected
-                self.detectionConfidence = confidence
-                self.isProcessingFrame = false
+            // Find the appropriate FEN for the current time
+            if let fen = self.findFENForTime(currentTime) {
+                print("Processing frame at time \(currentTime.seconds) with FEN: \(fen)")
+                DispatchQueue.main.async {
+                    self.isChessBoardDetected = true
+                    self.detectionConfidence = 1.0
+                    self.lastFEN = fen
+                    self.currentBoardOverlay = self.chessBoardRenderer.renderBoard()
+                    self.isProcessingFrame = false
+                }
+            } else {
+                print("No FEN found for time \(currentTime.seconds)")
+                DispatchQueue.main.async {
+                    self.isChessBoardDetected = false
+                    self.detectionConfidence = 0.0
+                    self.lastFEN = nil
+                    self.currentBoardOverlay = nil
+                    self.isProcessingFrame = false
+                }
             }
         }
+    }
+    
+    private func findFENForTime(_ time: CMTime) -> String? {
+        // Find the most recent FEN position before the current time
+        let fen = fenPositions
+            .filter { $0.time <= time }
+            .sorted { $0.time > $1.time }
+            .first?.fen
+        
+        if let fen = fen {
+            print("Found FEN for relative time \(time.seconds): \(fen)")
+        } else {
+            print("No FEN found for relative time \(time.seconds)")
+        }
+        
+        return fen
+    }
+    
+    func getCurrentBoardOverlay() -> CIImage? {
+        return currentBoardOverlay
     }
     
     func cleanup() {
@@ -673,6 +1001,13 @@ class VideoPlayerManager: NSObject, ObservableObject {
         detectedMoves = []
         error = nil
         isProcessingFrame = false
+        currentBoardOverlay = nil
+        loadedCorners = nil
+        lastProcessedTime = .zero
+        fenPositions.removeAll()
+        recordingStartTime = 0
+        isPlayerReady = false
+        lastFEN = nil
     }
     
     deinit {
@@ -689,43 +1024,152 @@ class ChessBoardDetector {
         // Convert to grayscale for better edge detection
         guard let grayscaleImage = convertToGrayscale(ciImage) else { return (false, 0.0) }
         
-        // Apply edge detection
+        // Apply edge detection with multiple passes
         guard let edges = detectEdges(in: grayscaleImage) else { return (false, 0.0) }
         
-        // Look for grid-like patterns
-        return detectGridPattern(in: edges)
+        // Look for grid-like patterns with perspective correction
+        return detectGridPattern(in: edges, originalImage: ciImage)
     }
     
-    func detectBoardState(in pixelBuffer: CVPixelBuffer) -> [[String]] {
-        // Initialize empty board
+    func detectBoardState(in pixelBuffer: CVPixelBuffer, corners: [CGPoint]?, imageSize: CGSize) -> [[String]] {
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         var board = Array(repeating: Array(repeating: "", count: 8), count: 8)
-        
-        // TODO: Implement actual piece detection
-        // For now, return empty board
+
+        // Use provided corners if available and valid
+        if let corners = corners, corners.count == 4 {
+            // Convert normalized Vision coordinates (origin bottom-left) to pixel coordinates
+            let pixelCorners = corners.map { pt in
+                CGPoint(x: pt.x * imageSize.width, y: (1.0 - pt.y) * imageSize.height)
+            }
+            // Perspective correction
+            let perspectiveTransform = CIFilter(name: "CIPerspectiveCorrection")!
+            perspectiveTransform.setValue(CIVector(cgPoint: pixelCorners[0]), forKey: "inputTopLeft")
+            perspectiveTransform.setValue(CIVector(cgPoint: pixelCorners[1]), forKey: "inputTopRight")
+            perspectiveTransform.setValue(CIVector(cgPoint: pixelCorners[2]), forKey: "inputBottomRight")
+            perspectiveTransform.setValue(CIVector(cgPoint: pixelCorners[3]), forKey: "inputBottomLeft")
+            perspectiveTransform.setValue(ciImage, forKey: kCIInputImageKey)
+            guard let correctedBoardImage = perspectiveTransform.outputImage else {
+                print("Failed to apply perspective correction to the board (manual corners).")
+                return board
+            }
+            let boardImage = correctedBoardImage.cropped(to: correctedBoardImage.extent)
+            let squareWidth = boardImage.extent.width / 8
+            let squareHeight = boardImage.extent.height / 8
+            for row in 0..<8 {
+                for col in 0..<8 {
+                    let squareRect = CGRect(
+                        x: boardImage.extent.origin.x + CGFloat(col) * squareWidth,
+                        y: boardImage.extent.origin.y + CGFloat(row) * squareHeight,
+                        width: squareWidth,
+                        height: squareHeight
+                    )
+                    let squareImage = boardImage.cropped(to: squareRect)
+                    if let piece = detectPiece(in: squareImage) {
+                        board[row][col] = piece
+                    }
+                }
+            }
+            return board
+        }
+        // ... fallback to old method if no corners ...
+        // (existing rectangle detection and perspective correction)
+        // ... existing code ...
+        // (copy the old code here if needed)
         return board
+    }
+    
+    private func detectPiece(in squareImage: CIImage) -> String? {
+        // Convert to grayscale
+        guard let grayscaleImage = convertToGrayscale(squareImage) else { return nil }
+        
+        // Apply threshold to separate piece from background
+        let thresholdFilter = CIFilter(name: "CIColorThreshold")
+        thresholdFilter?.setValue(grayscaleImage, forKey: kCIInputImageKey)
+        thresholdFilter?.setValue(0.3, forKey: "inputThreshold") // Lowered threshold
+        guard let thresholdImage = thresholdFilter?.outputImage else { return nil }
+        
+        // Calculate average brightness
+        let context = CIContext()
+        guard let cgImage = context.createCGImage(thresholdImage, from: thresholdImage.extent) else { return nil }
+        
+        let width = cgImage.width
+        let height = cgImage.height
+        let bytesPerPixel = 4
+        let bytesPerRow = width * bytesPerPixel
+        let bitsPerComponent = 8
+        var rawData = [UInt8](repeating: 0, count: width * height * bytesPerPixel)
+        
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        guard let context = CGContext(
+            data: &rawData,
+            width: width,
+            height: height,
+            bitsPerComponent: bitsPerComponent,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        
+        var totalBrightness: Float = 0
+        let pixelCount = width * height
+        
+        for i in stride(from: 0, to: rawData.count, by: 4) {
+            let r = Float(rawData[i])
+            let g = Float(rawData[i + 1])
+            let b = Float(rawData[i + 2])
+            totalBrightness += (r + g + b) / (3.0 * 255.0)
+        }
+        
+        let averageBrightness = totalBrightness / Float(pixelCount)
+        
+        // Lowered threshold for piece detection
+        if averageBrightness > 0.2 { // More sensitive threshold
+            return "P" // P for piece
+        }
+        
+        return nil
     }
     
     private func convertToGrayscale(_ image: CIImage) -> CIImage? {
         let grayscaleFilter = CIFilter(name: "CIColorControls")
         grayscaleFilter?.setValue(image, forKey: kCIInputImageKey)
         grayscaleFilter?.setValue(0.0, forKey: kCIInputSaturationKey)
+        grayscaleFilter?.setValue(1.1, forKey: kCIInputContrastKey) // Increase contrast
         return grayscaleFilter?.outputImage
     }
     
     private func detectEdges(in image: CIImage) -> CIImage? {
+        // Apply Gaussian blur to reduce noise
+        let blurFilter = CIFilter(name: "CIGaussianBlur")
+        blurFilter?.setValue(image, forKey: kCIInputImageKey)
+        blurFilter?.setValue(1.0, forKey: kCIInputRadiusKey)
+        guard let blurredImage = blurFilter?.outputImage else { return nil }
+        
+        // Apply edge detection
         let edgeFilter = CIFilter(name: "CIEdges")
-        edgeFilter?.setValue(image, forKey: kCIInputImageKey)
-        edgeFilter?.setValue(5.0, forKey: kCIInputIntensityKey)
-        return edgeFilter?.outputImage
+        edgeFilter?.setValue(blurredImage, forKey: kCIInputImageKey)
+        edgeFilter?.setValue(4.0, forKey: kCIInputIntensityKey)
+        guard let edgeImage = edgeFilter?.outputImage else { return nil }
+        
+        // Apply morphological operations to strengthen lines
+        let morphologyFilter = CIFilter(name: "CIMorphologyRectangleMaximum")
+        morphologyFilter?.setValue(edgeImage, forKey: kCIInputImageKey)
+        morphologyFilter?.setValue(3, forKey: "inputWidth")
+        morphologyFilter?.setValue(3, forKey: "inputHeight")
+        
+        return morphologyFilter?.outputImage
     }
     
-    private func detectGridPattern(in image: CIImage) -> (Bool, Double) {
-        // Create a request to detect rectangles
+    private func detectGridPattern(in image: CIImage, originalImage: CIImage) -> (Bool, Double) {
+        // Create a request to detect rectangles with more lenient parameters
         let request = VNDetectRectanglesRequest()
-        request.minimumAspectRatio = 0.8
-        request.maximumAspectRatio = 1.2
-        request.minimumSize = 0.2
+        request.minimumAspectRatio = 0.5  // More lenient aspect ratio
+        request.maximumAspectRatio = 2.0
+        request.minimumSize = 0.1  // Smaller minimum size
         request.maximumObservations = 1
+        request.quadratureTolerance = 20  // Allow more deviation from perfect rectangle
         
         let handler = VNImageRequestHandler(ciImage: image, options: [:])
         try? handler.perform([request])
@@ -736,19 +1180,156 @@ class ChessBoardDetector {
             // Calculate confidence based on multiple factors
             var confidence = Double(observation.confidence)
             
-            // Adjust confidence based on aspect ratio (closer to 1.0 is better)
+            // Adjust confidence based on aspect ratio (more lenient)
             let aspectRatio = Double(observation.boundingBox.width / observation.boundingBox.height)
-            let aspectRatioConfidence = 1.0 - abs(1.0 - aspectRatio)
-            confidence *= (0.7 + 0.3 * aspectRatioConfidence)
+            let aspectRatioConfidence = 1.0 - min(abs(1.0 - aspectRatio), 0.5) / 0.5
+            confidence *= (0.6 + 0.4 * aspectRatioConfidence)
             
             // Adjust confidence based on size (larger is better, up to a point)
             let sizeConfidence = min(Double(observation.boundingBox.width * observation.boundingBox.height * 4), 1.0)
-            confidence *= (0.7 + 0.3 * sizeConfidence)
+            confidence *= (0.6 + 0.4 * sizeConfidence)
+            
+            // Check for grid-like pattern within the detected rectangle
+            if let gridConfidence = detectGridLines(in: originalImage, boundingBox: observation.boundingBox) {
+                confidence *= (0.7 + 0.3 * gridConfidence)
+            }
             
             return (true, confidence)
         }
         
         return (false, 0.0)
+    }
+    
+    private func detectGridLines(in image: CIImage, boundingBox: CGRect) -> Double? {
+        // Create a request to detect contours
+        let request = VNDetectContoursRequest()
+        request.contrastAdjustment = 2.0
+        request.detectsDarkOnLight = true
+        request.maximumImageDimension = 512
+        
+        let handler = VNImageRequestHandler(ciImage: image, options: [:])
+        try? handler.perform([request])
+        
+        guard let observations = request.results else { return nil }
+        
+        // Count horizontal and vertical lines
+        var horizontalLines = 0
+        var verticalLines = 0
+        
+        for observation in observations {
+            let contour = observation.normalizedPath
+            
+            // Convert contour to points
+            var pathPoints: [CGPoint] = []
+            contour.applyWithBlock { element in
+                let type = element.pointee.type
+                let elementPoints = element.pointee.points
+                
+                switch type {
+                case .moveToPoint:
+                    pathPoints.append(elementPoints[0])
+                case .addLineToPoint:
+                    pathPoints.append(elementPoints[0])
+                case .addQuadCurveToPoint:
+                    pathPoints.append(elementPoints[0])
+                    pathPoints.append(elementPoints[1])
+                case .addCurveToPoint:
+                    pathPoints.append(elementPoints[0])
+                    pathPoints.append(elementPoints[1])
+                    pathPoints.append(elementPoints[2])
+                case .closeSubpath:
+                    if let firstPoint = pathPoints.first {
+                        pathPoints.append(firstPoint)
+                    }
+                @unknown default:
+                    break
+                }
+            }
+            
+            // Analyze line segments
+            for i in 0..<pathPoints.count - 1 {
+                let start = pathPoints[i]
+                let end = pathPoints[i + 1]
+                
+                // Check if line is within the bounding box
+                let lineCenter = CGPoint(
+                    x: (start.x + end.x) / 2,
+                    y: (start.y + end.y) / 2
+                )
+                
+                if boundingBox.contains(lineCenter) {
+                    let angle = abs(atan2(end.y - start.y, end.x - start.x))
+                    
+                    if angle < .pi / 4 || angle > 3 * .pi / 4 {
+                        horizontalLines += 1
+                    } else {
+                        verticalLines += 1
+                    }
+                }
+            }
+        }
+        
+        // Calculate confidence based on the number of detected lines
+        let expectedLines = 9 // 8 internal lines + 2 edges
+        let horizontalConfidence = min(Double(horizontalLines) / Double(expectedLines), 1.0)
+        let verticalConfidence = min(Double(verticalLines) / Double(expectedLines), 1.0)
+        
+        return (horizontalConfidence + verticalConfidence) / 2.0
+    }
+    
+    func detectChessBoardWithBoundingBox(in pixelBuffer: CVPixelBuffer) -> (Bool, Double, CGRect?) {
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        // Convert to grayscale for better edge detection
+        guard let grayscaleImage = convertToGrayscale(ciImage) else { return (false, 0.0, nil) }
+        // Apply edge detection with multiple passes
+        guard let edges = detectEdges(in: grayscaleImage) else { return (false, 0.0, nil) }
+        // Look for grid-like patterns with perspective correction
+        // Use the same rectangle detection as before
+        let request = VNDetectRectanglesRequest()
+        request.minimumAspectRatio = 0.5
+        request.maximumAspectRatio = 2.0
+        request.minimumSize = 0.1
+        request.maximumObservations = 1
+        request.quadratureTolerance = 20
+        let handler = VNImageRequestHandler(ciImage: edges, options: [:])
+        try? handler.perform([request])
+        guard let observation = request.results?.first else { return (false, 0.0, nil) }
+        // Calculate confidence as before
+        var confidence = Double(observation.confidence)
+        let aspectRatio = Double(observation.boundingBox.width / observation.boundingBox.height)
+        let aspectRatioConfidence = 1.0 - min(abs(1.0 - aspectRatio), 0.5) / 0.5
+        confidence *= (0.6 + 0.4 * aspectRatioConfidence)
+        let sizeConfidence = min(Double(observation.boundingBox.width * observation.boundingBox.height * 4), 1.0)
+        confidence *= (0.6 + 0.4 * sizeConfidence)
+        // Return the normalized bounding box
+        return (true, confidence, observation.boundingBox)
+    }
+    
+    func detectChessBoardWithBoundingBoxAndCorners(in pixelBuffer: CVPixelBuffer) -> (Bool, Double, CGRect?, [CGPoint]?) {
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        // Convert to grayscale for better edge detection
+        guard let grayscaleImage = convertToGrayscale(ciImage) else { return (false, 0.0, nil, nil) }
+        // Apply edge detection with multiple passes
+        guard let edges = detectEdges(in: grayscaleImage) else { return (false, 0.0, nil, nil) }
+        // Look for grid-like patterns with perspective correction
+        let request = VNDetectRectanglesRequest()
+        request.minimumAspectRatio = 0.5
+        request.maximumAspectRatio = 2.0
+        request.minimumSize = 0.1
+        request.maximumObservations = 1
+        request.quadratureTolerance = 20
+        let handler = VNImageRequestHandler(ciImage: edges, options: [:])
+        try? handler.perform([request])
+        guard let observation = request.results?.first else { return (false, 0.0, nil, nil) }
+        var confidence = Double(observation.confidence)
+        let aspectRatio = Double(observation.boundingBox.width / observation.boundingBox.height)
+        let aspectRatioConfidence = 1.0 - min(abs(1.0 - aspectRatio), 0.5) / 0.5
+        confidence *= (0.6 + 0.4 * aspectRatioConfidence)
+        let sizeConfidence = min(Double(observation.boundingBox.width * observation.boundingBox.height * 4), 1.0)
+        confidence *= (0.6 + 0.4 * sizeConfidence)
+        // Corners are normalized (0-1) in Vision coordinates (origin bottom-left)
+        let corners = [observation.topLeft, observation.topRight, observation.bottomRight, observation.bottomLeft]
+        return (true, confidence, observation.boundingBox, corners)
     }
 }
 
@@ -792,19 +1373,89 @@ extension URL {
     }
 }
 
+class LocalChessAPIService {
+    private let baseURL = "http://localhost:8000"
+    
+    func recognizePosition(imageData: Data) async throws -> (success: Bool, fen: String) {
+        let url = URL(string: "\(baseURL)/recognize_chess_position")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        
+        let boundary = UUID().uuidString
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        
+        var body = Data()
+        
+        // Add image data
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"image\"; filename=\"image.jpg\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append(imageData)
+        body.append("\r\n".data(using: .utf8)!)
+        
+        // Add color parameter
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"color\"\r\n\r\n".data(using: .utf8)!)
+        body.append("white\r\n".data(using: .utf8)!)
+        
+        // Add final boundary
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        
+        request.httpBody = body
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "LocalChessAPI", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            throw NSError(domain: "LocalChessAPI", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Server returned status code \(httpResponse.statusCode)"])
+        }
+        
+        // Parse the response
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let fen = json["fen"] as? String {
+            return (true, fen)
+        }
+        
+        return (false, "")
+    }
+    
+    func pixelBufferToData(_ pixelBuffer: CVPixelBuffer) -> Data? {
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        let context = CIContext()
+        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return nil }
+        
+        let uiImage = UIImage(cgImage: cgImage)
+        return uiImage.jpegData(compressionQuality: 0.8)
+    }
+}
+
 class CameraManager: NSObject, ObservableObject {
     let session = AVCaptureSession()
     private var videoOutput: AVCaptureMovieFileOutput?
     private var videoDataOutput: AVCaptureVideoDataOutput?
     @Published var isChessBoardDetected = false
-    @Published var detectionConfidence: Double = 0.0
     @Published var isSessionReady = false
     @Published var isRecording = false
-    private let chessBoardDetector = ChessBoardDetector()
-    private var currentRecordingHasChessBoard = false
-    private var currentRecordingConfidence = 0.0
+    @Published var isProcessing = false
+    @Published var currentMove: String?
+    @Published var moveNumber: Int = 0
+    @Published var lastFEN: String?
+    @Published var isProcessingFrame = false
+    private let localChessService = LocalChessAPIService()
     private var videoInput: AVCaptureDeviceInput?
     private var isSessionConfigured = false
+    private var lastBoardState: [[String]] = Array(repeating: Array(repeating: "", count: 8), count: 8)
+    private var lastMoveTime: Date = Date()
+    @Published var lastAPICallTime: Date = Date()
+    private let apiCallInterval: TimeInterval = 2.0 // Call API every 2 seconds
+    private var processingTask: Task<Void, Never>?
+    
+    // Add new properties for FEN tracking
+    private var fenPositions: [(time: CMTime, fen: String)] = []
+    private var recordingStartTime: CMTime?
     
     override init() {
         super.init()
@@ -838,9 +1489,9 @@ class CameraManager: NSObject, ObservableObject {
             
             // Setup camera input
             guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
-                return
-            }
-            
+            return
+        }
+        
             do {
                 let videoInput = try AVCaptureDeviceInput(device: videoDevice)
                 if self.session.canAddInput(videoInput) {
@@ -861,7 +1512,7 @@ class CameraManager: NSObject, ObservableObject {
             }
             
             // Setup movie file output for recording
-            let movieOutput = AVCaptureMovieFileOutput()
+        let movieOutput = AVCaptureMovieFileOutput()
             if self.session.canAddOutput(movieOutput) {
                 self.session.addOutput(movieOutput)
                 self.videoOutput = movieOutput
@@ -895,9 +1546,9 @@ class CameraManager: NSObject, ObservableObject {
     func startRecording() {
         guard let videoOutput = videoOutput else { return }
         
-        // Reset detection status for new recording
-        currentRecordingHasChessBoard = false
-        currentRecordingConfidence = 0.0
+        // Reset FEN tracking
+        fenPositions.removeAll()
+        recordingStartTime = nil
         
         let paths = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
         let fileUrl = paths[0].appendingPathComponent("chess_game_\(Date().timeIntervalSince1970).mov")
@@ -915,6 +1566,9 @@ class CameraManager: NSObject, ObservableObject {
         // Set maximum recording duration to 0 (unlimited)
         videoOutput.maxRecordedDuration = .zero
         
+        // Configure for better performance
+        session.sessionPreset = .high
+        
         DispatchQueue.main.async {
             self.isRecording = true
         }
@@ -923,10 +1577,184 @@ class CameraManager: NSObject, ObservableObject {
     }
     
     func stopRecording() {
+        guard isRecording else { return }
+        
+        // Stop the video output first
         videoOutput?.stopRecording()
+        
+        // Update UI immediately
         DispatchQueue.main.async {
             self.isRecording = false
+            self.isProcessing = true
         }
+    }
+    
+    private func detectMoves(in pixelBuffer: CVPixelBuffer) {
+        // Prevent concurrent processing
+        guard !isProcessingFrame else { return }
+        
+        // Check if enough time has passed since last API call
+        let now = Date()
+        guard now.timeIntervalSince(lastAPICallTime) >= apiCallInterval else { return }
+        
+        isProcessingFrame = true
+        lastAPICallTime = now
+        
+        // Move processing to background queue
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return }
+            
+            guard let imageData = self.localChessService.pixelBufferToData(pixelBuffer) else {
+                print("Failed to convert pixel buffer to data")
+                DispatchQueue.main.async {
+                    self.isProcessingFrame = false
+                }
+                return
+            }
+            
+            do {
+                print("Calling Local Chess API...")
+                let response = try await self.localChessService.recognizePosition(imageData: imageData)
+                print("API Response received - Success: \(response.success), FEN: \(response.fen)")
+                
+                if response.success {
+                    // Convert FEN to board state
+                    let currentBoardState = self.fenToBoardState(response.fen)
+                    
+                    // Compare with last board state to detect moves
+                    if let move = self.findMove(from: self.lastBoardState, to: currentBoardState) {
+                        print("Move detected: \(move)")
+                        DispatchQueue.main.async {
+                            self.moveNumber += 1
+                            self.currentMove = "\(self.moveNumber). \(move)"
+                        }
+                    }
+                    
+                    // Update last board state and FEN
+                    self.lastBoardState = currentBoardState
+                    
+                    // Store FEN position with timestamp if recording
+                    if self.isRecording {
+                        if self.recordingStartTime == nil {
+                            self.recordingStartTime = CMTime(seconds: 0, preferredTimescale: 600)
+                        }
+                        
+                        // Store absolute timestamp
+                        let absoluteTime = now.timeIntervalSince1970
+                        let relativeTime = absoluteTime - (self.recordingStartTime?.seconds ?? 0)
+                        
+                        // Only add new FEN if it's different from the last one
+                        if let lastFEN = self.fenPositions.last?.fen, lastFEN == response.fen {
+                            print("Skipping duplicate FEN position")
+                        } else {
+                            print("Adding new FEN position at time \(relativeTime)")
+                            self.fenPositions.append((time: CMTime(seconds: relativeTime, preferredTimescale: 600), fen: response.fen))
+                        }
+                    }
+                    
+                    // Update UI
+                    DispatchQueue.main.async {
+                        self.lastFEN = response.fen
+                        self.isChessBoardDetected = true
+                        self.isProcessingFrame = false
+                    }
+                } else {
+                    print("API returned unsuccessful response")
+                    DispatchQueue.main.async {
+                        self.isChessBoardDetected = false
+                        self.lastFEN = nil
+                        self.isProcessingFrame = false
+                    }
+                }
+            } catch {
+                print("Error recognizing position: \(error)")
+                DispatchQueue.main.async {
+                    self.isChessBoardDetected = false
+                    self.lastFEN = nil
+                    self.isProcessingFrame = false
+                }
+            }
+        }
+    }
+    
+    private func fenToBoardState(_ fen: String) -> [[String]] {
+        var board = Array(repeating: Array(repeating: "", count: 8), count: 8)
+        let parts = fen.split(separator: " ")
+        guard let position = parts.first else { return board }
+        
+        let ranks = position.split(separator: "/")
+        for (row, rank) in ranks.enumerated() {
+            var col = 0
+            for char in rank {
+                if let number = Int(String(char)) {
+                    col += number
+                } else {
+                    board[row][col] = String(char)
+                    col += 1
+                }
+            }
+        }
+        return board
+    }
+    
+    private func findMove(from oldState: [[String]], to newState: [[String]]) -> String? {
+        var fromSquare: (Int, Int)?
+        var toSquare: (Int, Int)?
+        var piece: String?
+        
+        // Find the moved piece and its new position
+        for row in 0..<8 {
+            for col in 0..<8 {
+                if oldState[row][col] != newState[row][col] {
+                    if oldState[row][col] != "" {
+                        fromSquare = (row, col)
+                        piece = oldState[row][col]
+                    }
+                    if newState[row][col] != "" {
+                        toSquare = (row, col)
+                    }
+                }
+            }
+        }
+        
+        // If we found both squares, create move notation
+        if let from = fromSquare, let to = toSquare, let piece = piece {
+            let fromFile = String(UnicodeScalar(97 + from.1)!)
+            let fromRank = String(8 - from.0)
+            let toFile = String(UnicodeScalar(97 + to.1)!)
+            let toRank = String(8 - to.0)
+            
+            return "\(piece)\(fromFile)\(fromRank)-\(toFile)\(toRank)"
+        }
+        
+        return nil
+    }
+    
+    private func processVideoWithOverlay(inputURL: URL, gameKey: String) async {
+        print("Starting video processing with overlay for game: \(gameKey)")
+        
+        // Load FEN positions from UserDefaults
+        if let gameInfo = UserDefaults.standard.dictionary(forKey: gameKey),
+           let fenPositionsData = gameInfo["fenPositions"] as? [[String: Any]] {
+            print("Loaded \(fenPositionsData.count) FEN positions from UserDefaults")
+            fenPositionsData.forEach { data in
+                if let time = data["time"] as? Double,
+                   let fen = data["fen"] as? String {
+                    print("Loaded FEN - Time: \(time), FEN: \(fen)")
+                }
+            }
+        } else {
+            print("No FEN positions found in UserDefaults for key: \(gameKey)")
+        }
+        
+        // Process video in background
+        await Task.detached(priority: .userInitiated) {
+            // ... rest of video processing code ...
+        }.value
+    }
+    
+    deinit {
+        processingTask?.cancel()
     }
 }
 
@@ -938,22 +1766,38 @@ extension CameraManager: AVCaptureFileOutputRecordingDelegate {
     func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
         if let error = error {
             print("Error recording video: \(error.localizedDescription)")
+            DispatchQueue.main.async {
+                self.isProcessing = false
+            }
             return
         }
         
-        // Save the detection status to UserDefaults
-        let gameInfo = [
-            "hasChessBoard": currentRecordingHasChessBoard,
-            "confidence": currentRecordingConfidence
-        ] as [String: Any]
+        print("Recording finished. Processing video with \(fenPositions.count) FEN positions")
         
-        UserDefaults.standard.set(gameInfo, forKey: outputFileURL.lastPathComponent)
-        print("Video saved to: \(outputFileURL)")
+        // Save the detection status and FEN positions to UserDefaults
+        let gameInfo: [String: Any] = [
+            "hasChessBoard": true,  // Always true since we have FEN positions
+            "confidence": 1.0,
+            "fenPositions": fenPositions.map { [
+                "time": $0.time.seconds,
+                "fen": $0.fen
+            ]},
+            "recordingStartTime": Date().timeIntervalSince1970  // Store current time as start time
+        ]
         
-        // Verify the recorded file
-        let asset = AVAsset(url: outputFileURL)
-        let duration = asset.duration.seconds
-        print("Recorded video duration: \(duration) seconds")
+        // Save to UserDefaults with a unique key
+        let gameKey = "game_\(outputFileURL.lastPathComponent)"
+        UserDefaults.standard.set(gameInfo, forKey: gameKey)
+        print("Saved FEN positions for game: \(gameKey)")
+        print("FEN positions saved: \(fenPositions.count)")
+        fenPositions.forEach { position in
+            print("Time: \(position.time.seconds), FEN: \(position.fen)")
+        }
+        
+        // Process the video in the background
+        processingTask = Task {
+            await processVideoWithOverlay(inputURL: outputFileURL, gameKey: gameKey)
+        }
     }
 }
 
@@ -961,16 +1805,8 @@ extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         
-        let (detected, confidence) = chessBoardDetector.detectChessBoard(in: pixelBuffer)
-        DispatchQueue.main.async {
-            self.isChessBoardDetected = detected
-            self.detectionConfidence = confidence
-            
-            // Update current recording status
-            if self.isRecording {
-                self.currentRecordingHasChessBoard = detected
-                self.currentRecordingConfidence = confidence
-            }
+        if isRecording {
+            detectMoves(in: pixelBuffer)
         }
     }
 }
@@ -1012,3 +1848,5 @@ struct CameraPreviewView: UIViewRepresentable {
 #Preview {
     ContentView()
 }
+
+
