@@ -46,105 +46,137 @@ struct ChessBoardOverlayView: View {
     private let boardState: [[String]]
     
     init(fen: String?, isBoardDetected: Bool, lichessURL: String? = nil) {
+        print("=== ChessBoardOverlayView Init ===")
+        print("FEN: \(fen ?? "nil")")
+        print("isBoardDetected: \(isBoardDetected)")
+        print("lichessURL: \(lichessURL ?? "nil")")
+        
         self.fen = fen
         self.isBoardDetected = isBoardDetected
         self.lichessURL = lichessURL
         
-        // Calculate board state once during initialization
-        if let fen = fen {
+        // Initialize board state
+        if let fen = fen, !fen.isEmpty {
+            print("Parsing FEN: \(fen)")
             var board = Array(repeating: Array(repeating: "", count: 8), count: 8)
             let parts = fen.split(separator: " ")
             if let position = parts.first {
+                print("Position part: \(position)")
                 let ranks = position.split(separator: "/")
+                print("Found \(ranks.count) ranks")
+                
                 for (row, rank) in ranks.enumerated() {
+                    print("Processing rank \(row): \(rank)")
                     var col = 0
                     for char in rank {
                         if let number = Int(String(char)) {
+                            print("Found number \(number) at col \(col)")
                             col += number
                         } else {
-                            board[row][col] = String(char)
+                            let piece = String(char)
+                            print("Found piece \(piece) at row \(row), col \(col)")
+                            // Convert FEN piece notation to our internal representation
+                            switch piece {
+                            case "K": board[row][col] = "♔"
+                            case "Q": board[row][col] = "♕"
+                            case "R": board[row][col] = "♖"
+                            case "B": board[row][col] = "♗"
+                            case "N": board[row][col] = "♘"
+                            case "P": board[row][col] = "♙"
+                            case "k": board[row][col] = "♚"
+                            case "q": board[row][col] = "♛"
+                            case "r": board[row][col] = "♜"
+                            case "b": board[row][col] = "♝"
+                            case "n": board[row][col] = "♞"
+                            case "p": board[row][col] = "♟"
+                            default: break
+                            }
                             col += 1
                         }
                     }
                 }
             }
+            print("Final board state:")
+            for row in board {
+                print(row)
+            }
             self.boardState = board
         } else {
+            print("No valid FEN provided, using empty board")
             self.boardState = Array(repeating: Array(repeating: "", count: 8), count: 8)
         }
-    }
-    
-    private func pieceSymbol(for piece: String) -> String {
-        switch piece.uppercased() {
-        case "K": return "♔"
-        case "Q": return "♕"
-        case "R": return "♖"
-        case "B": return "♗"
-        case "N": return "♘"
-        case "P": return "♙"
-        default: return ""
-        }
+        print("=== End ChessBoardOverlayView Init ===")
     }
     
     var body: some View {
-        if !isBoardDetected {
-            Text("No Chess Board Detected")
-                .font(.headline)
-                .foregroundColor(.white)
-                .padding()
-                .background(Color.black.opacity(0.7))
-                .cornerRadius(10)
-        } else {
-            VStack(spacing: 8) {
-                // Chess board
-                VStack(spacing: 0) {
-                    ForEach(0..<8, id: \.self) { row in
-                        HStack(spacing: 0) {
-                            ForEach(0..<8, id: \.self) { col in
-                                let isLightSquare = (row + col) % 2 == 0
-                                let piece = boardState[row][col]
+        VStack(spacing: 8) {
+            // Chess board
+            VStack(spacing: 0) {
+                ForEach(0..<8, id: \.self) { row in
+                    HStack(spacing: 0) {
+                        ForEach(0..<8, id: \.self) { col in
+                            let isLightSquare = (row + col) % 2 == 0
+                            let piece = boardState[row][col]
+                            
+                            ZStack {
+                                Rectangle()
+                                    .fill(isLightSquare ? Color.white.opacity(0.3) : Color.black.opacity(0.3))
+                                    .aspectRatio(1, contentMode: .fit)
                                 
-                                ZStack {
-                                    Rectangle()
-                                        .fill(isLightSquare ? Color.white.opacity(0.3) : Color.black.opacity(0.3))
-                                        .aspectRatio(1, contentMode: .fit)
-                                    
-                                    if !piece.isEmpty {
-                                        Text(pieceSymbol(for: piece))
-                                            .font(.system(size: 32, weight: .bold))
-                                            .foregroundColor(piece == piece.uppercased() ? .white : .black)
-                                            .shadow(color: .black.opacity(0.5), radius: 1, x: 1, y: 1)
-                                    }
+                                if !piece.isEmpty {
+                                    Text(piece)
+                                        .font(.system(size: 32, weight: .bold))
+                                        .foregroundColor(piece == piece.uppercased() ? .white : .black)
+                                        .shadow(color: .black.opacity(0.5), radius: 1, x: 1, y: 1)
                                 }
                             }
                         }
                     }
                 }
-                .background(Color.gray.opacity(0.3))
-                .cornerRadius(8)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.white.opacity(0.5), lineWidth: 2)
-                )
-                .shadow(color: .black.opacity(0.3), radius: 5, x: 0, y: 2)
-                
-                // Lichess URL button
-                if let url = lichessURL {
-                    Link(destination: URL(string: url)!) {
-                        HStack {
-                            Image(systemName: "link")
-                            Text("View on Lichess")
-                        }
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.blue.opacity(0.8))
-                        .cornerRadius(8)
+            }
+            .background(Color.gray.opacity(0.3))
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.white.opacity(0.5), lineWidth: 2)
+            )
+            .shadow(color: .black.opacity(0.3), radius: 5, x: 0, y: 2)
+            
+            // Status text
+            if !isBoardDetected {
+                Text("No Chess Board Detected")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding()
+                    .background(Color.black.opacity(0.7))
+                    .cornerRadius(10)
+            }
+            
+            // Lichess URL button
+            if let url = lichessURL {
+                Link(destination: URL(string: url)!) {
+                    HStack {
+                        Image(systemName: "link")
+                        Text("View on Lichess")
                     }
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.blue.opacity(0.8))
+                    .cornerRadius(8)
                 }
             }
-            .padding()
+        }
+        .padding()
+        .onAppear {
+            print("=== ChessBoardOverlayView Appeared ===")
+            print("Current FEN: \(fen ?? "nil")")
+            print("Board state:")
+            for row in boardState {
+                print(row)
+            }
+            print("=== End ChessBoardOverlayView Appeared ===")
         }
     }
 }
@@ -883,7 +915,7 @@ class VideoPlayerManager: NSObject, ObservableObject {
         // Verify file exists and is readable
         guard FileManager.default.fileExists(atPath: url.path),
               FileManager.default.isReadableFile(atPath: url.path) else {
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self.error = NSError(domain: "VideoPlayerError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Video file not found or not readable"])
             }
             return
@@ -935,16 +967,17 @@ class VideoPlayerManager: NSObject, ObservableObject {
         
         // Add observer for player item status
         playerItemStatusObserver = playerItem.observe(\.status, options: [.new, .old]) { [weak self] item, _ in
-            DispatchQueue.main.async {
+            Task { @MainActor in
+                guard let self = self else { return }
                 switch item.status {
                 case .failed:
                     print("Player item failed: \(String(describing: item.error))")
-                    self?.error = item.error
-                    self?.cleanup()
+                    self.error = item.error
+                    self.cleanup()
                 case .readyToPlay:
                     print("Player item ready to play")
-                    self?.error = nil
-                    self?.isPlayerReady = true
+                    self.error = nil
+                    self.isPlayerReady = true
                 case .unknown:
                     print("Player item status unknown")
                 @unknown default:
@@ -954,10 +987,26 @@ class VideoPlayerManager: NSObject, ObservableObject {
         }
         
         // Update UI on main thread
-        DispatchQueue.main.async {
+        Task { @MainActor in
             self.player = newPlayer
             self.player?.play()
         }
+    }
+    
+    @MainActor
+    private func updateUI(isBoardDetected: Bool, fen: String?, lichessURL: String?, isProcessing: Bool = false) {
+        print("=== Updating UI ===")
+        print("isBoardDetected: \(isBoardDetected)")
+        print("FEN: \(fen ?? "nil")")
+        print("lichessURL: \(lichessURL ?? "nil")")
+        print("isProcessing: \(isProcessing)")
+        
+        self.isChessBoardDetected = isBoardDetected
+        self.lastFEN = fen
+        self.lastLichessURL = lichessURL
+        self.isProcessingFrame = isProcessing
+        
+        print("=== End Updating UI ===")
     }
     
     @objc private func handleFrame() {
@@ -981,23 +1030,13 @@ class VideoPlayerManager: NSObject, ObservableObject {
             // Find the appropriate FEN for the current time
             if let position = self.findFENForTime(currentTime) {
                 print("Processing frame at time \(currentTime.seconds) with FEN: \(position.fen)")
-                DispatchQueue.main.async {
-                    self.isChessBoardDetected = true
-                    self.detectionConfidence = 1.0
-                    self.lastFEN = position.fen
-                    self.lastLichessURL = position.lichessURL
-                    self.currentBoardOverlay = self.chessBoardRenderer.renderBoard()
-                    self.isProcessingFrame = false
+                Task { @MainActor in
+                    await self.updateUI(isBoardDetected: true, fen: position.fen, lichessURL: position.lichessURL)
                 }
             } else {
                 print("No FEN found for time \(currentTime.seconds)")
-                DispatchQueue.main.async {
-                    self.isChessBoardDetected = false
-                    self.detectionConfidence = 0.0
-                    self.lastFEN = nil
-                    self.lastLichessURL = nil
-                    self.currentBoardOverlay = nil
-                    self.isProcessingFrame = false
+                Task { @MainActor in
+                    await self.updateUI(isBoardDetected: false, fen: nil, lichessURL: nil)
                 }
             }
         }
@@ -1429,7 +1468,7 @@ class LocalChessAPIService {
         let legal_position: Bool
     }
     
-    func recognizePosition(imageData: Data) async throws -> (success: Bool, fen: String) {
+    func recognizePosition(imageData: Data) async throws -> (success: Bool, fen: String, lichessURL: String?) {
         let url = URL(string: "\(baseURL)/recognize_chess_position")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -1439,7 +1478,7 @@ class LocalChessAPIService {
         
         var body = Data()
         
-        // Add image data
+        // Add image data with proper headers
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"image\"; filename=\"image.jpg\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
@@ -1456,6 +1495,8 @@ class LocalChessAPIService {
         
         request.httpBody = body
         
+        print("Sending request to API with image size: \(imageData.count) bytes")
+        
         let (data, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -1463,6 +1504,10 @@ class LocalChessAPIService {
         }
         
         guard httpResponse.statusCode == 200 else {
+            print("API Error: Status code \(httpResponse.statusCode)")
+            if let errorString = String(data: data, encoding: .utf8) {
+                print("Error response: \(errorString)")
+            }
             throw NSError(domain: "LocalChessAPI", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Server returned status code \(httpResponse.statusCode)"])
         }
         
@@ -1473,20 +1518,42 @@ class LocalChessAPIService {
             print("API Response - FEN: \(chessResponse.fen), Legal: \(chessResponse.legal_position)")
             print("ASCII Board:\n\(chessResponse.ascii)")
             print("Lichess URL: \(chessResponse.lichess_url)")
-            return (chessResponse.legal_position, chessResponse.fen)
+            
+            // Return the FEN string even if the position is not legal
+            return (chessResponse.legal_position, chessResponse.fen, chessResponse.lichess_url)
         } catch {
             print("Error decoding response: \(error)")
-            return (false, "")
+            if let errorString = String(data: data, encoding: .utf8) {
+                print("Raw response: \(errorString)")
+            }
+            return (false, "", nil)
         }
     }
     
     func pixelBufferToData(_ pixelBuffer: CVPixelBuffer) -> Data? {
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         let context = CIContext()
-        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return nil }
         
-        let uiImage = UIImage(cgImage: cgImage)
-        return uiImage.jpegData(compressionQuality: 0.8)
+        // Create a properly oriented image
+        let transformedImage = ciImage.transformed(by: CGAffineTransform(scaleX: 1.0, y: -1.0))
+        
+        // Ensure we have a valid image
+        guard let cgImage = context.createCGImage(transformedImage, from: transformedImage.extent) else {
+            print("Failed to create CGImage from CIImage")
+            return nil
+        }
+        
+        // Create UIImage with proper orientation
+        let uiImage = UIImage(cgImage: cgImage, scale: 1.0, orientation: .up)
+        
+        // Convert to JPEG with high quality
+        guard let imageData = uiImage.jpegData(compressionQuality: 0.9) else {
+            print("Failed to convert UIImage to JPEG data")
+            return nil
+        }
+        
+        print("Created image data with size: \(imageData.count) bytes")
+        return imageData
     }
 }
 
@@ -1508,50 +1575,55 @@ class CameraManager: NSObject, ObservableObject {
     private var lastBoardState: [[String]] = Array(repeating: Array(repeating: "", count: 8), count: 8)
     private var lastMoveTime: Date = Date()
     @Published var lastAPICallTime: Date = Date()
-    private let apiCallInterval: TimeInterval = 2.0 // Call API every 2 seconds
+    private let apiCallInterval: TimeInterval = 2.0
     private var processingTask: Task<Void, Never>?
-    
-    // Add new properties for FEN tracking
     private var fenPositions: [(time: CMTime, fen: String, lichessURL: String?)] = []
     private var recordingStartTime: CMTime?
     @Published var lastASCIIBoard: String?
     @Published var lastLichessURL: String?
+    private let setupQueue = DispatchQueue(label: "com.chess.camera.setup", qos: .userInitiated)
+    
+    @MainActor
+    private func updateUI(isBoardDetected: Bool, fen: String?, lichessURL: String?, isProcessing: Bool = false) {
+        print("=== Updating UI ===")
+        print("isBoardDetected: \(isBoardDetected)")
+        print("FEN: \(fen ?? "nil")")
+        print("lichessURL: \(lichessURL ?? "nil")")
+        print("isProcessing: \(isProcessing)")
+        
+        self.isChessBoardDetected = isBoardDetected
+        self.lastFEN = fen
+        self.lastLichessURL = lichessURL
+        self.isProcessingFrame = isProcessing
+        
+        print("=== End Updating UI ===")
+    }
     
     override init() {
         super.init()
-        checkPermissions()
-    }
-    
-    func checkPermissions() {
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized:
-            setupCamera()
-        case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
-                if granted {
-                    DispatchQueue.main.async {
-                        self?.setupCamera()
-                    }
-                }
-            }
-        default:
-            break
-        }
+        setupCamera()
     }
     
     private func setupCamera() {
         guard !isSessionConfigured else { return }
         
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        Task { @MainActor in
+            self.isSessionReady = false
+        }
+        
+        setupQueue.async { [weak self] in
             guard let self = self else { return }
             
             self.session.beginConfiguration()
             
+            // Configure session for high quality
+            self.session.sessionPreset = .high
+            
             // Setup camera input
             guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
-            return
-        }
-        
+                return
+            }
+            
             do {
                 let videoInput = try AVCaptureDeviceInput(device: videoDevice)
                 if self.session.canAddInput(videoInput) {
@@ -1565,14 +1637,15 @@ class CameraManager: NSObject, ObservableObject {
             
             // Setup video data output for frame processing
             let videoDataOutput = AVCaptureVideoDataOutput()
-            videoDataOutput.setSampleBufferDelegate(self, queue: DispatchQueue(label: "videoQueue"))
+            videoDataOutput.setSampleBufferDelegate(self, queue: DispatchQueue(label: "videoQueue", qos: .userInitiated))
+            videoDataOutput.alwaysDiscardsLateVideoFrames = true
             if self.session.canAddOutput(videoDataOutput) {
                 self.session.addOutput(videoDataOutput)
                 self.videoDataOutput = videoDataOutput
             }
             
             // Setup movie file output for recording
-        let movieOutput = AVCaptureMovieFileOutput()
+            let movieOutput = AVCaptureMovieFileOutput()
             if self.session.canAddOutput(movieOutput) {
                 self.session.addOutput(movieOutput)
                 self.videoOutput = movieOutput
@@ -1588,15 +1661,12 @@ class CameraManager: NSObject, ObservableObject {
                 }
             }
             
-            // Configure session for high quality
-            self.session.sessionPreset = .high
-            
             self.session.commitConfiguration()
             self.isSessionConfigured = true
             
             if !self.session.isRunning {
                 self.session.startRunning()
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     self.isSessionReady = true
                 }
             }
@@ -1626,10 +1696,7 @@ class CameraManager: NSObject, ObservableObject {
         // Set maximum recording duration to 0 (unlimited)
         videoOutput.maxRecordedDuration = .zero
         
-        // Configure for better performance
-        session.sessionPreset = .high
-        
-        DispatchQueue.main.async {
+        Task { @MainActor in
             self.isRecording = true
         }
         
@@ -1643,7 +1710,7 @@ class CameraManager: NSObject, ObservableObject {
         videoOutput?.stopRecording()
         
         // Update UI immediately
-        DispatchQueue.main.async {
+        Task { @MainActor in
             self.isRecording = false
             self.isProcessing = true
         }
@@ -1657,8 +1724,10 @@ class CameraManager: NSObject, ObservableObject {
         let now = Date()
         guard now.timeIntervalSince(lastAPICallTime) >= apiCallInterval else { return }
         
-        isProcessingFrame = true
-        lastAPICallTime = now
+        Task { @MainActor in
+            self.isProcessingFrame = true
+            self.lastAPICallTime = now
+        }
         
         // Move processing to background queue
         Task.detached(priority: .userInitiated) { [weak self] in
@@ -1666,9 +1735,7 @@ class CameraManager: NSObject, ObservableObject {
             
             guard let imageData = self.localChessService.pixelBufferToData(pixelBuffer) else {
                 print("Failed to convert pixel buffer to data")
-                DispatchQueue.main.async {
-                    self.isProcessingFrame = false
-                }
+                await self.updateUI(isBoardDetected: false, fen: nil, lichessURL: nil)
                 return
             }
             
@@ -1677,24 +1744,24 @@ class CameraManager: NSObject, ObservableObject {
                 let response = try await self.localChessService.recognizePosition(imageData: imageData)
                 print("API Response received - Success: \(response.success), FEN: \(response.fen)")
                 
-                if response.success {
-                    // Convert FEN to board state
-                    let currentBoardState = self.fenToBoardState(response.fen)
-                    
-                    // Compare with last board state to detect moves
-                    if let move = self.findMove(from: self.lastBoardState, to: currentBoardState) {
-                        print("Move detected: \(move)")
-                        DispatchQueue.main.async {
-                            self.moveNumber += 1
-                            self.currentMove = "\(self.moveNumber). \(move)"
-                        }
+                // Debug print the FEN parsing
+                if !response.fen.isEmpty {
+                    print("Parsing FEN: \(response.fen)")
+                    let parts = response.fen.split(separator: " ")
+                    if let position = parts.first {
+                        print("Position part: \(position)")
+                        let ranks = position.split(separator: "/")
+                        print("Ranks: \(ranks)")
                     }
-                    
-                    // Update last board state and FEN
-                    self.lastBoardState = currentBoardState
+                }
+                
+                // Always update UI with the FEN if we have one
+                if !response.fen.isEmpty {
+                    print("Updating UI with FEN: \(response.fen)")
+                    await self.updateUI(isBoardDetected: true, fen: response.fen, lichessURL: response.lichessURL)
                     
                     // Store FEN position with timestamp if recording
-                    if self.isRecording {
+                    if await self.isRecording {
                         if self.recordingStartTime == nil {
                             self.recordingStartTime = CMTime(seconds: 0, preferredTimescale: 600)
                         }
@@ -1708,86 +1775,23 @@ class CameraManager: NSObject, ObservableObject {
                             print("Skipping duplicate FEN position")
                         } else {
                             print("Adding new FEN position at time \(relativeTime)")
-                            self.fenPositions.append((time: CMTime(seconds: relativeTime, preferredTimescale: 600), fen: response.fen, lichessURL: nil))
+                            self.fenPositions.append((time: CMTime(seconds: relativeTime, preferredTimescale: 600), fen: response.fen, lichessURL: response.lichessURL))
                         }
                     }
-                    
-                    // Update UI
-                    DispatchQueue.main.async {
-                        self.lastFEN = response.fen
-                        self.isChessBoardDetected = true
-                        self.isProcessingFrame = false
-                    }
                 } else {
-                    print("API returned unsuccessful response")
-                    DispatchQueue.main.async {
-                        self.isChessBoardDetected = false
-                        self.lastFEN = nil
-                        self.isProcessingFrame = false
-                    }
+                    print("Empty FEN detected, skipping")
+                    await self.updateUI(isBoardDetected: false, fen: nil, lichessURL: nil)
                 }
+                
             } catch {
                 print("Error recognizing position: \(error)")
-                DispatchQueue.main.async {
-                    self.isChessBoardDetected = false
-                    self.lastFEN = nil
-                    self.isProcessingFrame = false
-                }
+                await self.updateUI(isBoardDetected: false, fen: nil, lichessURL: nil)
             }
         }
     }
     
-    private func fenToBoardState(_ fen: String) -> [[String]] {
-        var board = Array(repeating: Array(repeating: "", count: 8), count: 8)
-        let parts = fen.split(separator: " ")
-        guard let position = parts.first else { return board }
-        
-        let ranks = position.split(separator: "/")
-        for (row, rank) in ranks.enumerated() {
-            var col = 0
-            for char in rank {
-                if let number = Int(String(char)) {
-                    col += number
-                } else {
-                    board[row][col] = String(char)
-                    col += 1
-                }
-            }
-        }
-        return board
-    }
-    
-    private func findMove(from oldState: [[String]], to newState: [[String]]) -> String? {
-        var fromSquare: (Int, Int)?
-        var toSquare: (Int, Int)?
-        var piece: String?
-        
-        // Find the moved piece and its new position
-        for row in 0..<8 {
-            for col in 0..<8 {
-                if oldState[row][col] != newState[row][col] {
-                    if oldState[row][col] != "" {
-                        fromSquare = (row, col)
-                        piece = oldState[row][col]
-                    }
-                    if newState[row][col] != "" {
-                        toSquare = (row, col)
-                    }
-                }
-            }
-        }
-        
-        // If we found both squares, create move notation
-        if let from = fromSquare, let to = toSquare, let piece = piece {
-            let fromFile = String(UnicodeScalar(97 + from.1)!)
-            let fromRank = String(8 - from.0)
-            let toFile = String(UnicodeScalar(97 + to.1)!)
-            let toRank = String(8 - to.0)
-            
-            return "\(piece)\(fromFile)\(fromRank)-\(toFile)\(toRank)"
-        }
-        
-        return nil
+    deinit {
+        processingTask?.cancel()
     }
     
     private func processVideoWithOverlay(inputURL: URL, gameKey: String) async {
@@ -1809,12 +1813,199 @@ class CameraManager: NSObject, ObservableObject {
         
         // Process video in background
         await Task.detached(priority: .userInitiated) {
-            // ... rest of video processing code ...
+            // Create asset and composition
+            let asset = AVAsset(url: inputURL)
+            let composition = AVMutableComposition()
+            
+            // Load tracks asynchronously
+            let group = DispatchGroup()
+            group.enter()
+            
+            var videoTrack: AVAssetTrack?
+            var audioTrack: AVAssetTrack?
+            
+            asset.loadValuesAsynchronously(forKeys: ["tracks"]) {
+                defer { group.leave() }
+                
+                var error: NSError?
+                let status = asset.statusOfValue(forKey: "tracks", error: &error)
+                
+                guard status == .loaded else {
+                    print("Error loading asset tracks: \(error?.localizedDescription ?? "Unknown error")")
+                    return
+                }
+                
+                videoTrack = asset.tracks(withMediaType: .video).first
+                audioTrack = asset.tracks(withMediaType: .audio).first
+            }
+            
+            group.notify(queue: .main) {
+                guard let videoTrack = videoTrack,
+                      let compositionVideoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
+                    print("Failed to setup video track")
+                    return
+                }
+                
+                do {
+                    // Add video track
+                    try compositionVideoTrack.insertTimeRange(CMTimeRange(start: .zero, duration: asset.duration), of: videoTrack, at: .zero)
+                    
+                    // Add audio track if available
+                    if let audioTrack = audioTrack,
+                       let compositionAudioTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
+                        try compositionAudioTrack.insertTimeRange(CMTimeRange(start: .zero, duration: asset.duration), of: audioTrack, at: .zero)
+                    }
+                    
+                    // Get video dimensions
+                    let videoSize = videoTrack.naturalSize
+                    
+                    // Create video composition
+                    let videoComposition = AVMutableVideoComposition(asset: composition) { request in
+                        let source = request.sourceImage.clampedToExtent()
+                        
+                        // Create text overlay
+                        let textOverlay = self.createOverlayImage(for: videoSize)
+                        
+                        // Create chess board overlay
+                        let chessBoardRenderer = ChessBoardRenderer()
+                        let boardOverlay = chessBoardRenderer.renderBoard()
+                        
+                        // Scale and position the chess board overlay
+                        var finalImage = source
+                        
+                        if let boardOverlay = boardOverlay {
+                            // Scale the board to fit the video width while maintaining aspect ratio
+                            let scale = videoSize.width / boardOverlay.extent.width
+                            let scaledBoard = boardOverlay.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+                            
+                            // Position the board in the center of the video
+                            let xOffset = (videoSize.width - scaledBoard.extent.width) / 2
+                            let yOffset = (videoSize.height - scaledBoard.extent.height) / 2
+                            let positionedBoard = scaledBoard.transformed(by: CGAffineTransform(translationX: xOffset, y: yOffset))
+                            
+                            // Composite the board onto the source image
+                            finalImage = source.composited(over: positionedBoard)
+                        }
+                        
+                        // Add the text overlay
+                        finalImage = finalImage.composited(over: textOverlay)
+                        
+                        request.finish(with: finalImage, context: nil)
+                    }
+                    
+                    // Set video composition render size
+                    videoComposition.renderSize = videoSize
+                    videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+                    
+                    // Configure export session
+                    guard let exportSession = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
+                        print("Failed to create export session")
+                        return
+                    }
+                    
+                    exportSession.videoComposition = videoComposition
+                    
+                    // Create output URL
+                    let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent("chess_game_with_overlay_\(Date().timeIntervalSince1970).mov")
+                    
+                    // Remove existing file if it exists
+                    try? FileManager.default.removeItem(at: outputURL)
+                    
+                    exportSession.outputURL = outputURL
+                    exportSession.outputFileType = .mov
+                    exportSession.shouldOptimizeForNetworkUse = true
+                    
+                    // Start export
+                    exportSession.exportAsynchronously {
+                        switch exportSession.status {
+                        case .completed:
+                            print("Video export completed successfully")
+                            Task { @MainActor in
+                                self.isProcessing = false
+                            }
+                        case .failed:
+                            print("Video export failed: \(exportSession.error?.localizedDescription ?? "Unknown error")")
+                            Task { @MainActor in
+                                self.isProcessing = false
+                            }
+                        case .cancelled:
+                            print("Video export cancelled")
+                            Task { @MainActor in
+                                self.isProcessing = false
+                            }
+                        default:
+                            print("Video export status: \(exportSession.status.rawValue)")
+                            Task { @MainActor in
+                                self.isProcessing = false
+                            }
+                        }
+                    }
+                } catch {
+                    print("Error creating video with overlay: \(error.localizedDescription)")
+                    Task { @MainActor in
+                        self.isProcessing = false
+                    }
+                }
+            }
         }.value
     }
     
-    deinit {
-        processingTask?.cancel()
+    private func createOverlayImage(for videoSize: CGSize) -> CIImage {
+        let text = "Chess Board Detected"
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.boldSystemFont(ofSize: 36),
+            .foregroundColor: UIColor.white
+        ]
+        
+        let textSize = text.size(withAttributes: attributes)
+        let padding: CGFloat = 20
+        let backgroundRect = CGRect(
+            x: 0,
+            y: 0,
+            width: textSize.width + (padding * 2),
+            height: textSize.height + (padding * 2)
+        )
+        
+        let renderer = UIGraphicsImageRenderer(size: backgroundRect.size)
+        let image = renderer.image { context in
+            // Draw background
+            let backgroundPath = UIBezierPath(roundedRect: backgroundRect, cornerRadius: 10)
+            UIColor.black.withAlphaComponent(0.7).setFill()
+            backgroundPath.fill()
+            
+            // Draw text
+            let textRect = CGRect(
+                x: padding,
+                y: padding,
+                width: textSize.width,
+                height: textSize.height
+            )
+            text.draw(in: textRect, withAttributes: attributes)
+        }
+        
+        guard let cgImage = image.cgImage else {
+            return CIImage(color: .clear)
+        }
+        
+        let overlayCIImage = CIImage(cgImage: cgImage)
+        
+        // Calculate scale factor based on video size
+        let scaleFactor = min(videoSize.width / backgroundRect.width, videoSize.height / backgroundRect.height) * 0.2
+        
+        // Scale the overlay
+        let scale = CIFilter(name: "CILanczosScaleTransform")
+        scale?.setValue(overlayCIImage, forKey: kCIInputImageKey)
+        scale?.setValue(scaleFactor, forKey: kCIInputScaleKey)
+        
+        if let scaledImage = scale?.outputImage {
+            // Position the overlay in the top-left corner
+            let transform = CIFilter(name: "CIAffineTransform")
+            transform?.setValue(scaledImage, forKey: kCIInputImageKey)
+            transform?.setValue(CGAffineTransform(translationX: 20, y: videoSize.height - scaledImage.extent.height - 20), forKey: kCIInputTransformKey)
+            
+            return transform?.outputImage ?? overlayCIImage
+        }
+        return overlayCIImage
     }
 }
 
@@ -1826,7 +2017,7 @@ extension CameraManager: AVCaptureFileOutputRecordingDelegate {
     func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
         if let error = error {
             print("Error recording video: \(error.localizedDescription)")
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self.isProcessing = false
             }
             return
@@ -1834,24 +2025,27 @@ extension CameraManager: AVCaptureFileOutputRecordingDelegate {
         
         print("Recording finished. Processing video with \(fenPositions.count) FEN positions")
         
+        // Filter out invalid FEN positions
+        let validFENPositions = fenPositions.filter { !$0.fen.isEmpty }
+        
         // Save the detection status and FEN positions to UserDefaults
         let gameInfo: [String: Any] = [
-            "hasChessBoard": true,  // Always true since we have FEN positions
-            "confidence": 1.0,
-            "fenPositions": fenPositions.map { [
+            "hasChessBoard": !validFENPositions.isEmpty,
+            "confidence": validFENPositions.isEmpty ? 0.0 : 1.0,
+            "fenPositions": validFENPositions.map { [
                 "time": $0.time.seconds,
                 "fen": $0.fen,
-                "lichessURL": $0.lichessURL
+                "lichessURL": $0.lichessURL as Any
             ]},
-            "recordingStartTime": Date().timeIntervalSince1970  // Store current time as start time
+            "recordingStartTime": Date().timeIntervalSince1970
         ]
         
         // Save to UserDefaults with a unique key
         let gameKey = "game_\(outputFileURL.lastPathComponent)"
         UserDefaults.standard.set(gameInfo, forKey: gameKey)
         print("Saved FEN positions for game: \(gameKey)")
-        print("FEN positions saved: \(fenPositions.count)")
-        fenPositions.forEach { position in
+        print("FEN positions saved: \(validFENPositions.count)")
+        validFENPositions.forEach { position in
             print("Time: \(position.time.seconds), FEN: \(position.fen)")
         }
         
