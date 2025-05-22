@@ -40,13 +40,15 @@ struct ContentView: View {
 struct ChessBoardOverlayView: View {
     let fen: String?
     let isBoardDetected: Bool
+    let lichessURL: String?
     
     // Cache the board state to avoid recalculating on every render
     private let boardState: [[String]]
     
-    init(fen: String?, isBoardDetected: Bool) {
+    init(fen: String?, isBoardDetected: Bool, lichessURL: String? = nil) {
         self.fen = fen
         self.isBoardDetected = isBoardDetected
+        self.lichessURL = lichessURL
         
         // Calculate board state once during initialization
         if let fen = fen {
@@ -72,6 +74,18 @@ struct ChessBoardOverlayView: View {
         }
     }
     
+    private func pieceSymbol(for piece: String) -> String {
+        switch piece.uppercased() {
+        case "K": return "♔"
+        case "Q": return "♕"
+        case "R": return "♖"
+        case "B": return "♗"
+        case "N": return "♘"
+        case "P": return "♙"
+        default: return ""
+        }
+    }
+    
     var body: some View {
         if !isBoardDetected {
             Text("No Chess Board Detected")
@@ -81,30 +95,55 @@ struct ChessBoardOverlayView: View {
                 .background(Color.black.opacity(0.7))
                 .cornerRadius(10)
         } else {
-            VStack(spacing: 0) {
-                ForEach(0..<8, id: \.self) { row in
-                    HStack(spacing: 0) {
-                        ForEach(0..<8, id: \.self) { col in
-                            let isLightSquare = (row + col) % 2 == 0
-                            let piece = boardState[row][col]
-                            
-                            ZStack {
-                                Rectangle()
-                                    .fill(isLightSquare ? Color.white.opacity(0.3) : Color.black.opacity(0.3))
-                                    .aspectRatio(1, contentMode: .fit)
+            VStack(spacing: 8) {
+                // Chess board
+                VStack(spacing: 0) {
+                    ForEach(0..<8, id: \.self) { row in
+                        HStack(spacing: 0) {
+                            ForEach(0..<8, id: \.self) { col in
+                                let isLightSquare = (row + col) % 2 == 0
+                                let piece = boardState[row][col]
                                 
-                                if !piece.isEmpty {
-                                    Text(piece)
-                                        .font(.system(size: 24, weight: .bold))
-                                        .foregroundColor(piece == piece.uppercased() ? .white : .black)
+                                ZStack {
+                                    Rectangle()
+                                        .fill(isLightSquare ? Color.white.opacity(0.3) : Color.black.opacity(0.3))
+                                        .aspectRatio(1, contentMode: .fit)
+                                    
+                                    if !piece.isEmpty {
+                                        Text(pieceSymbol(for: piece))
+                                            .font(.system(size: 32, weight: .bold))
+                                            .foregroundColor(piece == piece.uppercased() ? .white : .black)
+                                            .shadow(color: .black.opacity(0.5), radius: 1, x: 1, y: 1)
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                .background(Color.gray.opacity(0.3))
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.white.opacity(0.5), lineWidth: 2)
+                )
+                .shadow(color: .black.opacity(0.3), radius: 5, x: 0, y: 2)
+                
+                // Lichess URL button
+                if let url = lichessURL {
+                    Link(destination: URL(string: url)!) {
+                        HStack {
+                            Image(systemName: "link")
+                            Text("View on Lichess")
+                        }
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.blue.opacity(0.8))
+                        .cornerRadius(8)
+                    }
+                }
             }
-            .background(Color.gray.opacity(0.3))
-            .cornerRadius(8)
             .padding()
         }
     }
@@ -186,26 +225,27 @@ struct RecordingView: View {
         ZStack {
             if cameraManager.isSessionReady {
                 GeometryReader { geo in
-        ZStack {
-            CameraPreviewView(session: cameraManager.session)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .edgesIgnoringSafeArea(.all)
-            
+                    ZStack {
+                        CameraPreviewView(session: cameraManager.session)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .edgesIgnoringSafeArea(.all)
+                        
                         // Chess board overlay
-            VStack {
+                        VStack {
                             ChessBoardOverlayView(
                                 fen: cameraManager.lastFEN,
-                                isBoardDetected: cameraManager.isChessBoardDetected
+                                isBoardDetected: cameraManager.isChessBoardDetected,
+                                lichessURL: cameraManager.lastLichessURL
                             )
                             .frame(width: geo.size.width * 0.8)
                             .padding(.top, 50)
                             
-                Spacer()
+                            Spacer()
                         }
                         
                         // Debug overlay
                         VStack {
-                HStack {
+                            HStack {
                                 Spacer()
                                 DebugOverlayView(
                                     lastFEN: cameraManager.lastFEN,
@@ -231,10 +271,10 @@ struct RecordingView: View {
                             isRecording: cameraManager.isRecording,
                             onRecordToggle: {
                                 if cameraManager.isRecording {
-                            cameraManager.stopRecording()
-                        } else {
-                            cameraManager.startRecording()
-                        }
+                                    cameraManager.stopRecording()
+                                } else {
+                                    cameraManager.startRecording()
+                                }
                             }
                         )
                     }
@@ -642,7 +682,8 @@ struct VideoPlayerView: View {
                     VStack {
                         ChessBoardOverlayView(
                             fen: playerManager.lastFEN,
-                            isBoardDetected: true
+                            isBoardDetected: true,
+                            lichessURL: playerManager.lastLichessURL
                         )
                         .frame(width: UIScreen.main.bounds.width * 0.8)
                         .padding(.top, 50)
@@ -817,6 +858,7 @@ class VideoPlayerManager: NSObject, ObservableObject {
     @Published var player: AVPlayer?
     @Published var error: Error?
     @Published var lastFEN: String?
+    @Published var lastLichessURL: String?
     private var playerItem: AVPlayerItem?
     private var playerItemStatusObserver: NSKeyValueObservation?
     private var playerItemOutput: AVPlayerItemVideoOutput?
@@ -830,7 +872,7 @@ class VideoPlayerManager: NSObject, ObservableObject {
     private var processingQueue = DispatchQueue(label: "com.chess.videoprocessing", qos: .userInitiated)
     private var lastProcessedTime: CMTime = .zero
     private let processingInterval: CMTime = CMTime(value: 1, timescale: 1) // Process every second
-    private var fenPositions: [(time: CMTime, fen: String)] = []
+    private var fenPositions: [(time: CMTime, fen: String, lichessURL: String?)] = []
     private var recordingStartTime: Double = 0
     private var isPlayerReady = false
     
@@ -857,10 +899,11 @@ class VideoPlayerManager: NSObject, ObservableObject {
             fenPositions = fenPositionsData.compactMap { data in
                 guard let time = data["time"] as? Double,
                       let fen = data["fen"] as? String else { return nil }
+                let lichessURL = data["lichessURL"] as? String
                 // Convert absolute timestamp to relative timestamp
                 let relativeTime = time - startTime
                 print("Converting timestamp - Absolute: \(time), Start: \(startTime), Relative: \(relativeTime)")
-                return (time: CMTime(seconds: relativeTime, preferredTimescale: 600), fen: fen)
+                return (time: CMTime(seconds: relativeTime, preferredTimescale: 600), fen: fen, lichessURL: lichessURL)
             }
             print("Loaded \(fenPositions.count) FEN positions for playback")
             fenPositions.forEach { position in
@@ -936,12 +979,13 @@ class VideoPlayerManager: NSObject, ObservableObject {
             guard let self = self else { return }
             
             // Find the appropriate FEN for the current time
-            if let fen = self.findFENForTime(currentTime) {
-                print("Processing frame at time \(currentTime.seconds) with FEN: \(fen)")
+            if let position = self.findFENForTime(currentTime) {
+                print("Processing frame at time \(currentTime.seconds) with FEN: \(position.fen)")
                 DispatchQueue.main.async {
                     self.isChessBoardDetected = true
                     self.detectionConfidence = 1.0
-                    self.lastFEN = fen
+                    self.lastFEN = position.fen
+                    self.lastLichessURL = position.lichessURL
                     self.currentBoardOverlay = self.chessBoardRenderer.renderBoard()
                     self.isProcessingFrame = false
                 }
@@ -951,6 +995,7 @@ class VideoPlayerManager: NSObject, ObservableObject {
                     self.isChessBoardDetected = false
                     self.detectionConfidence = 0.0
                     self.lastFEN = nil
+                    self.lastLichessURL = nil
                     self.currentBoardOverlay = nil
                     self.isProcessingFrame = false
                 }
@@ -958,20 +1003,20 @@ class VideoPlayerManager: NSObject, ObservableObject {
         }
     }
     
-    private func findFENForTime(_ time: CMTime) -> String? {
+    private func findFENForTime(_ time: CMTime) -> (fen: String, lichessURL: String?)? {
         // Find the most recent FEN position before the current time
-        let fen = fenPositions
+        let position = fenPositions
             .filter { $0.time <= time }
             .sorted { $0.time > $1.time }
-            .first?.fen
+            .first
         
-        if let fen = fen {
-            print("Found FEN for relative time \(time.seconds): \(fen)")
+        if let position = position {
+            print("Found FEN for relative time \(time.seconds): \(position.fen)")
+            return (fen: position.fen, lichessURL: position.lichessURL)
         } else {
             print("No FEN found for relative time \(time.seconds)")
+            return nil
         }
-        
-        return fen
     }
     
     func getCurrentBoardOverlay() -> CIImage? {
@@ -1008,6 +1053,7 @@ class VideoPlayerManager: NSObject, ObservableObject {
         recordingStartTime = 0
         isPlayerReady = false
         lastFEN = nil
+        lastLichessURL = nil
     }
     
     deinit {
@@ -1374,7 +1420,14 @@ extension URL {
 }
 
 class LocalChessAPIService {
-    private let baseURL = "http://localhost:8000"
+    private let baseURL = "http://159.203.102.249:8000"
+    
+    struct ChessPositionResponse: Codable {
+        let fen: String
+        let ascii: String
+        let lichess_url: String
+        let legal_position: Bool
+    }
     
     func recognizePosition(imageData: Data) async throws -> (success: Bool, fen: String) {
         let url = URL(string: "\(baseURL)/recognize_chess_position")!
@@ -1413,13 +1466,18 @@ class LocalChessAPIService {
             throw NSError(domain: "LocalChessAPI", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Server returned status code \(httpResponse.statusCode)"])
         }
         
-        // Parse the response
-        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let fen = json["fen"] as? String {
-            return (true, fen)
+        // Parse the response using Codable
+        let decoder = JSONDecoder()
+        do {
+            let chessResponse = try decoder.decode(ChessPositionResponse.self, from: data)
+            print("API Response - FEN: \(chessResponse.fen), Legal: \(chessResponse.legal_position)")
+            print("ASCII Board:\n\(chessResponse.ascii)")
+            print("Lichess URL: \(chessResponse.lichess_url)")
+            return (chessResponse.legal_position, chessResponse.fen)
+        } catch {
+            print("Error decoding response: \(error)")
+            return (false, "")
         }
-        
-        return (false, "")
     }
     
     func pixelBufferToData(_ pixelBuffer: CVPixelBuffer) -> Data? {
@@ -1454,8 +1512,10 @@ class CameraManager: NSObject, ObservableObject {
     private var processingTask: Task<Void, Never>?
     
     // Add new properties for FEN tracking
-    private var fenPositions: [(time: CMTime, fen: String)] = []
+    private var fenPositions: [(time: CMTime, fen: String, lichessURL: String?)] = []
     private var recordingStartTime: CMTime?
+    @Published var lastASCIIBoard: String?
+    @Published var lastLichessURL: String?
     
     override init() {
         super.init()
@@ -1613,7 +1673,7 @@ class CameraManager: NSObject, ObservableObject {
             }
             
             do {
-                print("Calling Local Chess API...")
+                print("Calling Chess Position API...")
                 let response = try await self.localChessService.recognizePosition(imageData: imageData)
                 print("API Response received - Success: \(response.success), FEN: \(response.fen)")
                 
@@ -1648,7 +1708,7 @@ class CameraManager: NSObject, ObservableObject {
                             print("Skipping duplicate FEN position")
                         } else {
                             print("Adding new FEN position at time \(relativeTime)")
-                            self.fenPositions.append((time: CMTime(seconds: relativeTime, preferredTimescale: 600), fen: response.fen))
+                            self.fenPositions.append((time: CMTime(seconds: relativeTime, preferredTimescale: 600), fen: response.fen, lichessURL: nil))
                         }
                     }
                     
@@ -1780,7 +1840,8 @@ extension CameraManager: AVCaptureFileOutputRecordingDelegate {
             "confidence": 1.0,
             "fenPositions": fenPositions.map { [
                 "time": $0.time.seconds,
-                "fen": $0.fen
+                "fen": $0.fen,
+                "lichessURL": $0.lichessURL
             ]},
             "recordingStartTime": Date().timeIntervalSince1970  // Store current time as start time
         ]
