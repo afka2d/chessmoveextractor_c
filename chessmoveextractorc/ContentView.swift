@@ -1440,10 +1440,16 @@ extension CameraManager: AVCapturePhotoCaptureDelegate {
                     if let index = self.capturedPhotos.firstIndex(where: { $0.id == capturedPhoto.id }) {
                         // Update corners result
                         if let corners = cornersResponse {
+                            let detectedCorners = corners.corners.map { CGPoint(x: $0.x, y: $0.y) }
                             self.capturedPhotos[index].cornersResult = CapturedPhoto.CornersResult(
-                                corners: corners.corners.map { CGPoint(x: $0.x, y: $0.y) },
+                                corners: detectedCorners,
                                 message: corners.message
                             )
+                            
+                            // Generate masked image with detected corners
+                            if detectedCorners.count == 4 {
+                                self.capturedPhotos[index].maskedImage = capturedPhoto.image.maskChessboardArea(corners: detectedCorners)
+                            }
                         }
                         
                         // Update position result
@@ -1500,6 +1506,7 @@ struct CapturedPhoto: Identifiable {
     var isProcessing: Bool
     var positionResult: PositionResult?
     var cornersResult: CornersResult?
+    var maskedImage: UIImage?
     var error: String?
     var apiErrors: APIErrors?
     
@@ -1526,6 +1533,8 @@ struct CapturedPhotosView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var shareSheet: ShareSheet?
     @State private var showingShareSheet = false
+    @State private var showingManualCornerInput = false
+    @State private var photoForManualInput: CapturedPhoto?
     
     private func generateShareText(for photo: CapturedPhoto) -> String {
         var text = "Chess Position Analysis\n\n"
@@ -1570,6 +1579,11 @@ struct CapturedPhotosView: View {
                 preprocessedImageView(preprocessedImage)
             }
             
+            // Masked Image (areas outside chessboard greyed out)
+            if let maskedImage = photo.maskedImage {
+                maskedImageView(maskedImage)
+            }
+            
             // Processing Indicator
             if photo.isProcessing {
                 processingView()
@@ -1604,9 +1618,19 @@ struct CapturedPhotosView: View {
     
     private func originalImageView(_ photo: CapturedPhoto) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Original Image")
-                .font(.subheadline)
-                .foregroundColor(.blue)
+            HStack {
+                Text("Original Image")
+                    .font(.subheadline)
+                    .foregroundColor(.blue)
+                Spacer()
+                Button("Manual Corner Input") {
+                    // Create a new view for manual corner input
+                    presentManualCornerInput(for: photo)
+                }
+                .font(.caption)
+                .foregroundColor(.orange)
+            }
+            
             Image(uiImage: photo.image)
                 .resizable()
                 .scaledToFit()
@@ -1629,6 +1653,21 @@ struct CapturedPhotosView: View {
         }
         .padding()
         .background(Color.gray.opacity(0.1))
+        .cornerRadius(8)
+    }
+    
+    private func maskedImageView(_ image: UIImage) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Masked Image (Outside Chessboard Greyed Out)")
+                .font(.subheadline)
+                .foregroundColor(.green)
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .cornerRadius(8)
+        }
+        .padding()
+        .background(Color.green.opacity(0.1))
         .cornerRadius(8)
     }
     
@@ -1734,6 +1773,26 @@ struct CapturedPhotosView: View {
         }
     }
     
+    private func presentManualCornerInput(for photo: CapturedPhoto) {
+        photoForManualInput = photo
+        showingManualCornerInput = true
+    }
+    
+    private func updatePhotoWithManualCorners(photo: CapturedPhoto, corners: [CGPoint]) {
+        if let index = cameraManager.capturedPhotos.firstIndex(where: { $0.id == photo.id }) {
+            // Update corners result with manual input
+            cameraManager.capturedPhotos[index].cornersResult = CapturedPhoto.CornersResult(
+                corners: corners,
+                message: "Manual corner input"
+            )
+            
+            // Generate masked image with manual corners
+            if corners.count == 4 {
+                cameraManager.capturedPhotos[index].maskedImage = photo.image.maskChessboardAreaWithManualCorners(corners: corners)
+            }
+        }
+    }
+    
     var body: some View {
         NavigationView {
             ScrollView {
@@ -1758,6 +1817,13 @@ struct CapturedPhotosView: View {
             .sheet(isPresented: $showingShareSheet) {
                 if let shareSheet = shareSheet {
                     shareSheet
+                }
+            }
+            .sheet(isPresented: $showingManualCornerInput) {
+                if let photo = photoForManualInput {
+                    ManualCornerInputView(photo: photo) { corners in
+                        updatePhotoWithManualCorners(photo: photo, corners: corners)
+                    }
                 }
             }
         }
@@ -1911,6 +1977,91 @@ extension UIImage {
         
         return UIImage(cgImage: outputCGImage)
     }
+    
+    func maskChessboardArea(corners: [CGPoint]) -> UIImage? {
+        guard corners.count == 4,
+              let cgImage = self.cgImage else { return nil }
+        
+        let imageSize = CGSize(width: cgImage.width, height: cgImage.height)
+        
+        // Create a graphics context
+        UIGraphicsBeginImageContextWithOptions(imageSize, false, 0.0)
+        guard let context = UIGraphicsGetCurrentContext() else { return nil }
+        
+        // Draw the original image
+        context.draw(cgImage, in: CGRect(origin: .zero, size: imageSize))
+        
+        // Create a mask for the chessboard area
+        let path = UIBezierPath()
+        
+        // Convert normalized coordinates to image coordinates
+        let imageCorners = corners.map { corner in
+            CGPoint(x: corner.x * imageSize.width, y: corner.y * imageSize.height)
+        }
+        
+        // Create polygon from corners
+        path.move(to: imageCorners[0])
+        for i in 1..<imageCorners.count {
+            path.addLine(to: imageCorners[i])
+        }
+        path.close()
+        
+        // Create a mask that covers the entire image
+        let fullImagePath = UIBezierPath(rect: CGRect(origin: .zero, size: imageSize))
+        fullImagePath.append(path)
+        fullImagePath.usesEvenOddFillRule = true
+        
+        // Apply grey overlay to areas outside the chessboard
+        context.setFillColor(UIColor.gray.withAlphaComponent(0.7).cgColor)
+        context.addPath(fullImagePath.cgPath)
+        context.fillPath(using: .evenOdd)
+        
+        // Get the final image
+        let maskedImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        
+        return maskedImage
+    }
+    
+    func maskChessboardAreaWithManualCorners(corners: [CGPoint]) -> UIImage? {
+        guard corners.count == 4,
+              let cgImage = self.cgImage else { return nil }
+        
+        let imageSize = CGSize(width: cgImage.width, height: cgImage.height)
+        
+        // Create a graphics context
+        UIGraphicsBeginImageContextWithOptions(imageSize, false, 0.0)
+        guard let context = UIGraphicsGetCurrentContext() else { return nil }
+        
+        // Draw the original image
+        context.draw(cgImage, in: CGRect(origin: .zero, size: imageSize))
+        
+        // Create a mask for the chessboard area using manual corners
+        let path = UIBezierPath()
+        
+        // Use corners as pixel coordinates (assuming they're already in pixel space)
+        path.move(to: corners[0])
+        for i in 1..<corners.count {
+            path.addLine(to: corners[i])
+        }
+        path.close()
+        
+        // Create a mask that covers the entire image except the chessboard area
+        let fullImagePath = UIBezierPath(rect: CGRect(origin: .zero, size: imageSize))
+        fullImagePath.append(path)
+        fullImagePath.usesEvenOddFillRule = true
+        
+        // Apply grey overlay to areas outside the chessboard
+        context.setFillColor(UIColor.gray.withAlphaComponent(0.7).cgColor)
+        context.addPath(fullImagePath.cgPath)
+        context.fillPath(using: .evenOdd)
+        
+        // Get the final image
+        let maskedImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        
+        return maskedImage
+    }
 }
 
 struct TipsView: View {
@@ -2059,6 +2210,185 @@ struct ChessBoardOverlay: View {
             }
             .stroke(Color.green, lineWidth: 2)
         }
+    }
+}
+
+struct ManualCornerInputView: View {
+    let photo: CapturedPhoto
+    let onCornersSelected: ([CGPoint]) -> Void
+    
+    @State private var selectedCorners: [CGPoint] = []
+    @State private var imageSize: CGSize = .zero
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                Text("Tap on the four corners of the chessboard")
+                    .font(.headline)
+                    .padding()
+                
+                Text("Selected: \(selectedCorners.count)/4 corners")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                
+                GeometryReader { geometry in
+                    ZStack {
+                        Image(uiImage: photo.image)
+                            .resizable()
+                            .scaledToFit()
+                            .background(
+                                GeometryReader { imageGeometry in
+                                    Color.clear
+                                        .onAppear {
+                                            let imageAspectRatio = photo.image.size.width / photo.image.size.height
+                                            let viewAspectRatio = geometry.size.width / geometry.size.height
+                                            
+                                            if imageAspectRatio > viewAspectRatio {
+                                                // Image is wider than view
+                                                let displayHeight = geometry.size.width / imageAspectRatio
+                                                imageSize = CGSize(width: geometry.size.width, height: displayHeight)
+                                            } else {
+                                                // Image is taller than view
+                                                let displayWidth = geometry.size.height * imageAspectRatio
+                                                imageSize = CGSize(width: displayWidth, height: geometry.size.height)
+                                            }
+                                        }
+                                }
+                            )
+                            .onTapGesture { location in
+                                if selectedCorners.count < 4 {
+                                    // Convert tap location to image coordinates
+                                    let imageLocation = convertTapToImageCoordinates(location: location, geometry: geometry)
+                                    selectedCorners.append(imageLocation)
+                                }
+                            }
+                        
+                        // Draw selected corners
+                        ForEach(0..<selectedCorners.count, id: \.self) { index in
+                            let corner = selectedCorners[index]
+                            let viewLocation = convertImageToViewCoordinates(point: corner, geometry: geometry)
+                            
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 20, height: 20)
+                                .position(viewLocation)
+                            
+                            Text("\(index + 1)")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                                .position(viewLocation)
+                        }
+                        
+                        // Draw lines between corners
+                        if selectedCorners.count >= 2 {
+                            Path { path in
+                                let viewCorners = selectedCorners.map { convertImageToViewCoordinates(point: $0, geometry: geometry) }
+                                path.move(to: viewCorners[0])
+                                for i in 1..<viewCorners.count {
+                                    path.addLine(to: viewCorners[i])
+                                }
+                                if viewCorners.count == 4 {
+                                    path.closeSubpath()
+                                }
+                            }
+                            .stroke(Color.red, lineWidth: 2)
+                        }
+                    }
+                }
+                
+                HStack {
+                    Button("Clear All") {
+                        selectedCorners.removeAll()
+                    }
+                    .disabled(selectedCorners.isEmpty)
+                    
+                    Button("Undo Last") {
+                        if !selectedCorners.isEmpty {
+                            selectedCorners.removeLast()
+                        }
+                    }
+                    .disabled(selectedCorners.isEmpty)
+                    
+                    Spacer()
+                    
+                    Button("Done") {
+                        if selectedCorners.count == 4 {
+                            onCornersSelected(selectedCorners)
+                            dismiss()
+                        }
+                    }
+                    .disabled(selectedCorners.count != 4)
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding()
+            }
+            .navigationTitle("Manual Corner Input")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+    
+    private func convertTapToImageCoordinates(location: CGPoint, geometry: GeometryProxy) -> CGPoint {
+        let imageAspectRatio = photo.image.size.width / photo.image.size.height
+        let viewAspectRatio = geometry.size.width / geometry.size.height
+        
+        var imageRect: CGRect
+        
+        if imageAspectRatio > viewAspectRatio {
+            // Image is wider than view
+            let displayHeight = geometry.size.width / imageAspectRatio
+            let yOffset = (geometry.size.height - displayHeight) / 2
+            imageRect = CGRect(x: 0, y: yOffset, width: geometry.size.width, height: displayHeight)
+        } else {
+            // Image is taller than view
+            let displayWidth = geometry.size.height * imageAspectRatio
+            let xOffset = (geometry.size.width - displayWidth) / 2
+            imageRect = CGRect(x: xOffset, y: 0, width: displayWidth, height: geometry.size.height)
+        }
+        
+        // Convert tap location to image coordinates
+        let relativeX = (location.x - imageRect.origin.x) / imageRect.width
+        let relativeY = (location.y - imageRect.origin.y) / imageRect.height
+        
+        return CGPoint(
+            x: relativeX * photo.image.size.width,
+            y: relativeY * photo.image.size.height
+        )
+    }
+    
+    private func convertImageToViewCoordinates(point: CGPoint, geometry: GeometryProxy) -> CGPoint {
+        let imageAspectRatio = photo.image.size.width / photo.image.size.height
+        let viewAspectRatio = geometry.size.width / geometry.size.height
+        
+        var imageRect: CGRect
+        
+        if imageAspectRatio > viewAspectRatio {
+            // Image is wider than view
+            let displayHeight = geometry.size.width / imageAspectRatio
+            let yOffset = (geometry.size.height - displayHeight) / 2
+            imageRect = CGRect(x: 0, y: yOffset, width: geometry.size.width, height: displayHeight)
+        } else {
+            // Image is taller than view
+            let displayWidth = geometry.size.height * imageAspectRatio
+            let xOffset = (geometry.size.width - displayWidth) / 2
+            imageRect = CGRect(x: xOffset, y: 0, width: displayWidth, height: geometry.size.height)
+        }
+        
+        // Convert image coordinates to view coordinates
+        let relativeX = point.x / photo.image.size.width
+        let relativeY = point.y / photo.image.size.height
+        
+        return CGPoint(
+            x: imageRect.origin.x + relativeX * imageRect.width,
+            y: imageRect.origin.y + relativeY * imageRect.height
+        )
     }
 }
 
