@@ -2048,16 +2048,16 @@ struct ChessBoardOverlay: View {
                 let scaleX = geometry.size.width / imageSize.width
                 let scaleY = geometry.size.height / imageSize.height
                 
-                // Draw lines between corners
-                if corners.count >= 4 {
-                    path.move(to: CGPoint(x: corners[0].x * scaleX, y: corners[0].y * scaleY))
-                    path.addLine(to: CGPoint(x: corners[1].x * scaleX, y: corners[1].y * scaleY))
-                    path.addLine(to: CGPoint(x: corners[2].x * scaleX, y: corners[2].y * scaleY))
-                    path.addLine(to: CGPoint(x: corners[3].x * scaleX, y: corners[3].y * scaleY))
-                    path.closeSubpath()
-                }
+                // Draw lines between corners (commented out to remove green lines)
+                // if corners.count >= 4 {
+                //     path.move(to: CGPoint(x: corners[0].x * scaleX, y: corners[0].y * scaleY))
+                //     path.addLine(to: CGPoint(x: corners[1].x * scaleX, y: corners[1].y * scaleY))
+                //     path.addLine(to: CGPoint(x: corners[2].x * scaleX, y: corners[2].y * scaleY))
+                //     path.addLine(to: CGPoint(x: corners[3].x * scaleX, y: corners[3].y * scaleY))
+                //     path.closeSubpath()
+                // }
             }
-            .stroke(Color.green, lineWidth: 2)
+            // .stroke(Color.green, lineWidth: 2) // Commented out to remove green lines
         }
     }
 }
