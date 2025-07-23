@@ -16,7 +16,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "500"
             endingLineNumber = "500"
-            landmarkName = "cleanup()"
+            landmarkName = "setupPlayer(with:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
