@@ -1589,11 +1589,6 @@ class LocalChessService {
         body.append("Content-Disposition: form-data; name=\"corners\"\r\n\r\n".data(using: .utf8)!)
         body.append("\(cornersString)\r\n".data(using: .utf8)!)
         
-        // Add cursor_description parameter (required by the cursor description endpoint)
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"cursor_description\"\r\n\r\n".data(using: .utf8)!)
-        body.append("Chess position with manually adjusted corners\r\n".data(using: .utf8)!)
-        
         // Add debug parameter to help identify issues
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"debug\"\r\n\r\n".data(using: .utf8)!)
