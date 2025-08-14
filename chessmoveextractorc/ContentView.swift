@@ -111,6 +111,22 @@ struct ContentView: View {
                 }
                 .tag(1)
         }
+        .onAppear {
+            // Customize tab bar appearance for better visibility
+            let appearance = UITabBarAppearance()
+            appearance.configureWithOpaqueBackground()
+            
+            // Add a subtle border to the tab bar
+            appearance.shadowColor = UIColor.systemGray4
+            appearance.shadowImage = UIImage()
+            
+            // Make tab bar background slightly transparent with border
+            appearance.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.95)
+            
+            // Apply the appearance
+            UITabBar.appearance().standardAppearance = appearance
+            UITabBar.appearance().scrollEdgeAppearance = appearance
+        }
     }
 }
 
@@ -3642,58 +3658,49 @@ struct FullScreenCornerEditor: View {
                 .aspectRatio(photo.image.size, contentMode: .fit)
                 .padding()
                 Spacer()
-                VStack(spacing: 12) {
-                    HStack(spacing: 16) {
-                        Button(action: {
-                            onSendToAPI(corners)
-                        }) {
-                            HStack {
-                                Image(systemName: "arrow.up.circle.fill")
-                                Text("Send to API")
-                            }
-                            .font(.headline)
-                            .padding(12)
-                            .background(Color.orange)
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
+                VStack(spacing: 16) {
+                    // Large Analyze button
+                    Button(action: {
+                        onSendToAPI(corners)
+                    }) {
+                        HStack {
+                            Image(systemName: "magnifyingglass.circle.fill")
+                                .font(.title2)
+                            Text("Analyze")
+                                .font(.title2)
+                                .fontWeight(.semibold)
                         }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color.blue)
+                        .cornerRadius(12)
+                    }
+                    
+                    HStack(spacing: 20) {
+                        // Small save button
                         Button(action: {
                             if let greyedImage = photo.image.createBlurredImageWithChessboardFocus(corners: corners) {
                                 onSaveGreyedImage(greyedImage)
                             }
                         }) {
-                            HStack {
-                                Image(systemName: "square.and.arrow.down")
-                                Text("Save Greyed")
-                            }
-                            .font(.headline)
-                            .padding(12)
-                            .background(Color.green)
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
+                            Image(systemName: "square.and.arrow.down")
+                                .font(.title2)
+                                .foregroundColor(.white)
+                                .frame(width: 44, height: 44)
+                                .background(Color.green)
+                                .cornerRadius(22)
                         }
-                        // In FullScreenCornerEditor, add a debug button to save the exact API image
-                        Button(action: {
-                            // Save the exact image sent to the API (normalized, greyed)
-                            let normalizedImage = photo.image.fixOrientation()
-                            if let apiGreyedImage = normalizedImage.createBlurredImageWithChessboardFocus(corners: corners) {
-                                onSaveGreyedImage(apiGreyedImage)
-                            }
-                        }) {
-                            HStack {
-                                Image(systemName: "ladybug")
-                                Text("Save API Image (Debug)")
-                            }
-                            .font(.headline)
-                            .padding(12)
-                            .background(Color.pink)
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
-                        }
+                        
+                        Spacer()
+                        
+                        Text("Drag corners to adjust, then tap Analyze")
+                            .font(.caption)
+                            .foregroundColor(.yellow)
+                            .multilineTextAlignment(.center)
+                        
+                        Spacer()
                     }
-                    Text("Drag the corners to adjust. Tap 'Send to API' to update recognition.")
-                        .font(.caption)
-                        .foregroundColor(.yellow)
                 }
                 .padding(.bottom, 32)
             }
