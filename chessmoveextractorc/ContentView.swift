@@ -1932,7 +1932,9 @@ class CameraManager: NSObject, ObservableObject {
             print("🔄 Normalized image orientation: \(normalizedImage.imageOrientation.rawValue)")
             print("🔄 Using greyed image for API (model trained on greyed images)")
             
-            let (positionResponse, positionError, positionDebugImages) = try await localChessService.recognizePositionWithDescription(imageData: imageData, corners: corners)
+            // Use the new ChessCogService with manual corners endpoint
+            let chessService = ChessCogService()
+            let response = try await chessService.recognizePositionWithManualCorners(imageData: imageData, corners: corners)
             
             await MainActor.run {
                 // Clear processing state
@@ -1941,82 +1943,39 @@ class CameraManager: NSObject, ObservableObject {
                 // Update manual corners
                 self.capturedPhotos[photoIndex].manualCorners = corners
                 
-                // Update position result with corrected corners
-                if let position = positionResponse {
+                // Update position result with the new ChessCogResponse format
                     self.capturedPhotos[photoIndex].positionResult = CapturedPhoto.PositionResult(
-                        fen: position.fen,
-                        lichessURL: position.lichess_url,
-                        ascii: position.ascii,
-                        legalPosition: position.legal_position ?? false,
-                        debugImages: positionDebugImages, // This will show in the "Position Recognition Debug Images" row
-                        debugImagePaths: position.debug_image_paths,
-                        corners: position.corners,
-                        processingTime: position.processing_time?.description,
-                        imageInfo: position.image_info,
-                        debugInfo: position.debug_info,
-                        description: position.description, // Add the description from the new API
-                        board2d: position.board_2d,
-                        piecesFound: position.pieces_found
+                        fen: response.fen,
+                        lichessURL: response.lichessUrl,
+                        ascii: response.ascii,
+                        legalPosition: response.legalPosition,
+                        debugImages: nil, // No debug images in new format
+                        debugImagePaths: nil, // Not used in new format
+                        corners: response.corners.map { [Double($0[0]), Double($0[1])] },
+                        processingTime: response.processingTime?.description,
+                        imageInfo: nil, // Not used in new format
+                        debugInfo: nil, // Not used in new format
+                        description: response.positionDescription,
+                        board2d: nil, // Not used in new format
+                        piecesFound: response.piecesFound
                     )
                     
-                    // Process debug images from the new API call
-                    if let positionDebugImages = positionDebugImages {
-                        print("🔍 Processing debug images from corrected corners API call: \(positionDebugImages.keys.sorted())")
-                        print("🔍 New debug images will appear in 'Position Recognition Debug Images' section")
-                        for (key, image) in positionDebugImages {
-                            print("🔍 New debug image '\(key)': size=\(image.size), scale=\(image.scale)")
-                        }
-                    }
+                    print("✅ Successfully analyzed position with new API endpoint!")
+                    print("🔍 FEN: \(response.fen)")
+                    print("🔍 Legal Position: \(response.legalPosition)")
+                    print("🔍 Pieces Found: \(response.piecesFound)")
+                    print("🔍 Processing Time: \(response.processingTime ?? 0.0) seconds")
                     
-                    // Log the description if available
-                    print("🔍 Full API response analysis:")
-                    print("🔍 FEN: \(position.fen)")
-                    print("🔍 Position Description: \(position.position_description ?? "nil")")
-                    print("🔍 Computed Description: \(position.description ?? "nil")")
-                    print("🔍 Has Debug Images: \(position.debug_images != nil)")
-                    print("🔍 Debug Image Keys: \(position.debug_images?.keys.sorted() ?? [])")
-                    
-                    if let description = position.description {
-                        print("📝 Position description length: \(description.count)")
-                        print("📝 Position description preview: \(String(description.prefix(200)))")
-                        
-                        // Check for various base64 image indicators
-                        let isBase64Image = description.contains("data:image") || 
-                                          description.contains("iVBORw0KGgo") ||
-                                          description.contains("zQx1ZWeeT9lJ5ufbaoX+E7BekMASoA2YSVvbko/jsF29SyKUDDAzOcb2dV1sSs7ztH1dFzAbWzf9wX48n4Akx7aS3OLjONrOBDWJpOu6bH/69On++fPM9IPttVYSIIm22Wy3lXQch6TjOP4PJawEpiiI1nwAAAAASUVORK5CYII=") ||
-                                          description.count > 1000
-                        
-                        if isBase64Image {
-                            print("⚠️ Position description contains base64 image data!")
-                            print("⚠️ This appears to be an image, not text description")
-                        } else {
-                            print("✅ Position description appears to be valid text")
-                        }
-                    } else {
-                        print("❌ No position description in API response")
-                    }
-                    
-                    // Update API errors (no corners error since we don't use that endpoint)
+                    // Clear any previous errors
                     self.capturedPhotos[photoIndex].apiErrors = CapturedPhoto.APIErrors(
-                        positionError: positionError,
+                        positionError: nil,
                         cornersError: nil
                     )
-                    
-                    print("✅ Successfully updated position with corrected corners and description")
                     
                     // Show success message briefly
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        // The success will be visible in the updated position result and debug images
+                        // The success will be visible in the updated position result
                     }
-                } else if let error = positionError {
-                    // Update only the position error (no corners error since we don't use that endpoint)
-                    self.capturedPhotos[photoIndex].apiErrors = CapturedPhoto.APIErrors(
-                        positionError: error,
-                        cornersError: nil
-                    )
-                    
-                    print("❌ Failed to update position with corrected corners: \(error)")
-                }
             }
         } catch {
             print("❌ Error sending corrected corners to API: \(error)")
@@ -2069,46 +2028,20 @@ extension CameraManager: AVCapturePhotoCaptureDelegate {
                 // Add to the array immediately
                 self.capturedPhotos.append(capturedPhoto)
                 
-                do {
-                    // Only detect corners initially, don't send to position API until user manually adjusts corners
-                    let imageData = image.jpegData(compressionQuality: 0.8) ?? Data()
-                    print("📸 Detecting corners only with size: \(imageData.count) bytes")
+                // No API calls here - just store the photo and let user manually adjust corners
+                if let index = self.capturedPhotos.firstIndex(where: { $0.id == capturedPhoto.id }) {
+                    // Set default corners for manual adjustment
+                    self.capturedPhotos[index].manualCorners = [
+                        CGPoint(x: 0.1, y: 0.1),   // Top-left
+                        CGPoint(x: 0.9, y: 0.1),   // Top-right
+                        CGPoint(x: 0.9, y: 0.9),   // Bottom-right
+                        CGPoint(x: 0.1, y: 0.9)    // Bottom-left
+                    ]
                     
-                    let (cornersResponse, cornersError, cornersDebugImages) = try await self.localChessService.detectCorners(imageData: imageData)
-                    // Don't call position API initially - wait for user to adjust corners
+                    // Mark as not processing
+                    self.capturedPhotos[index].isProcessing = false
                     
-                    print("🔍 Corners API response: \(cornersResponse?.corners.map { "(\($0.x), \($0.y))" }.joined(separator: ", ") ?? "nil")")
-                    print("🔍 Corners API error: \(cornersError ?? "none")")
-                    
-                    // Update the photo with results
-                    if let index = self.capturedPhotos.firstIndex(where: { $0.id == capturedPhoto.id }) {
-                        // Convert corners response
-                        if let corners = cornersResponse {
-                            print("🔍 Storing corners response: \(corners.corners.map { "(\($0.x), \($0.y))" }.joined(separator: ", "))")
-                            self.capturedPhotos[index].cornersResult = CapturedPhoto.CornersResult(
-                                corners: corners.corners.map { CGPoint(x: $0.x, y: $0.y) },
-                                message: corners.message
-                            )
-                            print("🔍 Corners stored successfully")
-                        } else {
-                            print("❌ No corners response received")
-                        }
-                        
-                        // Set API errors (only corners error for now)
-                        self.capturedPhotos[index].apiErrors = CapturedPhoto.APIErrors(
-                            positionError: nil, // No position API call initially
-                            cornersError: cornersError
-                        )
-                        
-                        // Mark as not processing
-                        self.capturedPhotos[index].isProcessing = false
-                    }
-                } catch {
-                    print("Error processing photo: \(error)")
-                    if let index = self.capturedPhotos.firstIndex(where: { $0.id == capturedPhoto.id }) {
-                        self.capturedPhotos[index].error = error.localizedDescription
-                        self.capturedPhotos[index].isProcessing = false
-                    }
+                    print("📸 Photo captured and stored. User can now manually adjust corners and press Analyze Position.")
                 }
             }
         }

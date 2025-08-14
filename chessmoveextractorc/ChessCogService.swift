@@ -3,40 +3,41 @@ import CoreVideo
 import UIKit
 
 struct ChessCogResponse: Codable {
-    let success: Bool
     let fen: String
-    let boardAscii: String
-    let pieceCount: Int
-    let whitePieces: PieceCount
-    let blackPieces: PieceCount
-    let turn: String
-    let isCheck: Bool
-    let isCheckmate: Bool
+    let ascii: String?
+    let lichessUrl: String?
+    let legalPosition: Bool
+    let positionDescription: String?
+    let board2d: String?
+    let piecesFound: Int
+    let debugImages: [String: String]
+    let debugImagePaths: String?
+    let corners: [[Double]]
+    let processingTime: Double?
+    let imageInfo: String?
+    let debugInfo: String?
+    let error: String?
     
     enum CodingKeys: String, CodingKey {
-        case success
         case fen
-        case boardAscii = "board_ascii"
-        case pieceCount = "piece_count"
-        case whitePieces = "white_pieces"
-        case blackPieces = "black_pieces"
-        case turn
-        case isCheck = "is_check"
-        case isCheckmate = "is_checkmate"
+        case ascii
+        case lichessUrl = "lichess_url"
+        case legalPosition = "legal_position"
+        case positionDescription = "position_description"
+        case board2d = "board_2d"
+        case piecesFound = "pieces_found"
+        case debugImages = "debug_images"
+        case debugImagePaths = "debug_image_paths"
+        case corners
+        case processingTime = "processing_time"
+        case imageInfo = "image_info"
+        case debugInfo = "debug_info"
+        case error
     }
 }
 
-struct PieceCount: Codable {
-    let pawn: Int
-    let knight: Int
-    let bishop: Int
-    let rook: Int
-    let queen: Int
-    let king: Int
-}
-
 class ChessCogService {
-    private let baseURL = "https://chess-scan-server-tonyblum2.replit.app/api"
+    private let baseURL = "http://159.203.102.249:8000"
     private let session: URLSession
     private let maxRetries = 3
     
@@ -48,7 +49,7 @@ class ChessCogService {
         self.session = URLSession(configuration: config)
     }
     
-    func recognizePosition(imageData: Data) async throws -> ChessCogResponse {
+    func recognizePositionWithManualCorners(imageData: Data, corners: [CGPoint]) async throws -> ChessCogResponse {
         // Optimize image data before sending
         guard let optimizedData = optimizeImageData(imageData) else {
             throw NSError(domain: "ChessCogError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to optimize image"])
@@ -59,7 +60,7 @@ class ChessCogService {
         
         while retryCount < maxRetries {
             do {
-                return try await makeRequest(with: optimizedData)
+                return try await makeRequestWithManualCorners(imageData: optimizedData, corners: corners)
             } catch {
                 lastError = error
                 retryCount += 1
@@ -73,8 +74,8 @@ class ChessCogService {
         throw lastError ?? NSError(domain: "ChessCogError", code: -1, userInfo: [NSLocalizedDescriptionKey: "All retry attempts failed"])
     }
     
-    private func makeRequest(with imageData: Data) async throws -> ChessCogResponse {
-        guard let url = URL(string: "\(baseURL)/recognize") else {
+    private func makeRequestWithManualCorners(imageData: Data, corners: [CGPoint]) async throws -> ChessCogResponse {
+        guard let url = URL(string: "\(baseURL)/recognize_with_manual_corners") else {
             throw URLError(.badURL)
         }
         
@@ -94,6 +95,21 @@ class ChessCogService {
         body.append("Content-Disposition: form-data; name=\"image\"; filename=\"chessboard.jpg\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
         body.append(imageData)
+        
+        // Add corners as JSON string
+        let cornersArray = corners.map { [Double($0.x), Double($0.y)] }
+        let cornersData = try JSONSerialization.data(withJSONObject: cornersArray)
+        let cornersString = String(data: cornersData, encoding: .utf8) ?? "[]"
+        
+        body.append("\r\n--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"corners\"\r\n\r\n".data(using: .utf8)!)
+        body.append(cornersString.data(using: .utf8)!)
+        
+        // Add color parameter
+        body.append("\r\n--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"color\"\r\n\r\n".data(using: .utf8)!)
+        body.append("white".data(using: .utf8)!)
+        
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
         
         request.httpBody = body
