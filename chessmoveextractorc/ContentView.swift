@@ -2517,8 +2517,13 @@ struct CapturedPhotosView: View {
     
         private func sendCorrectedCornersToAPI(photo: CapturedPhoto, corners: [CGPoint]) {
         Task {
-        // Send the image with manually adjusted corners to the API
-        await cameraManager.sendCorrectedCornersToAPI(for: photo.id, corners: corners)
+            // Send the image with manually adjusted corners to the API
+            await cameraManager.sendCorrectedCornersToAPI(for: photo.id, corners: corners)
+            
+            // Automatically dismiss the corner editor when API call completes
+            await MainActor.run {
+                editingPhotoId = nil
+            }
         }
     }
     
@@ -3539,6 +3544,7 @@ struct FullScreenCornerEditor: View {
     let onSaveGreyedImage: (UIImage) -> Void
     @State private var isEditing = true
     @State private var selectedCornerIndex: Int? = nil
+    @State private var isProcessing = false
 
     var body: some View {
         ZStack {
@@ -3607,22 +3613,33 @@ struct FullScreenCornerEditor: View {
                 Spacer()
                 VStack(spacing: 16) {
                     // Large Analyze button
-                        Button(action: {
+                    Button(action: {
+                        isProcessing = true
                         onSendToAPI(corners)
                     }) {
                         HStack {
-                            Image(systemName: "magnifyingglass.circle.fill")
-                                .font(.title2)
-                            Text("Analyze")
-                                .font(.title2)
-                                .fontWeight(.semibold)
+                            if isProcessing {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(0.8)
+                                Text("Processing...")
+                                    .font(.title2)
+                                    .fontWeight(.semibold)
+                            } else {
+                                Image(systemName: "magnifyingglass.circle.fill")
+                                    .font(.title2)
+                                Text("Analyze")
+                                    .font(.title2)
+                                    .fontWeight(.semibold)
+                            }
                         }
-                            .foregroundColor(.white)
+                        .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(Color.blue)
                         .cornerRadius(12)
-                        }
+                    }
+                    .disabled(isProcessing)
                         
                     HStack(spacing: 20) {
                         // Small save button

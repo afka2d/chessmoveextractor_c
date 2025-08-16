@@ -7,8 +7,32 @@ struct ChessboardView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            chessboardView
-            fenDisplayView
+            HStack(spacing: 0) {
+                // Left column - rank numbers (8-1)
+                VStack(spacing: 0) {
+                    ForEach(0..<8, id: \.self) { row in
+                        Text("\(8 - row)")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .frame(width: 20, height: 36)
+                    }
+                }
+                
+                // Main chessboard
+                chessboardView
+            }
+            
+            // Bottom row - file letters (a-h)
+            HStack(spacing: 0) {
+                Spacer()
+                    .frame(width: 20) // Left margin
+                ForEach(0..<8, id: \.self) { col in
+                    Text(String(Character(UnicodeScalar(97 + col)!))) // 'a' = 97
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .frame(width: 36, height: 20)
+                }
+            }
         }
         .onAppear {
             parseFEN(fen)
@@ -28,9 +52,11 @@ struct ChessboardView: View {
                 }
             }
         }
-        .background(Color.black)
-        .cornerRadius(8)
-        .shadow(radius: 3)
+        .overlay(
+            RoundedRectangle(cornerRadius: 0)
+                .stroke(Color.gray.opacity(0.4), lineWidth: 1)
+        )
+        .shadow(radius: 2)
     }
     
     private func chessSquare(row: Int, col: Int) -> some View {
@@ -42,36 +68,24 @@ struct ChessboardView: View {
         }) {
             ZStack {
                 Rectangle()
-                    .fill(isWhiteSquare ? Color(white: 0.9) : Color(white: 0.6))
-                    .frame(width: 36, height: 36) // Reduced from 44x44
+                    .fill(isWhiteSquare ? Color(red: 0.96, green: 0.93, blue: 0.85) : Color(red: 0.4, green: 0.6, blue: 0.4))
+                    .frame(width: 36, height: 36)
                     .overlay(
                         Rectangle()
-                            .stroke(selectedSquare?.row == row && selectedSquare?.col == col ? Color.blue : Color.clear, lineWidth: 3)
+                            .stroke(selectedSquare?.row == row && selectedSquare?.col == col ? Color.blue : Color.clear, lineWidth: 2)
                     )
                 
                 if let piece = piece {
+                    // Chess.com/Lichess-style piece design
                     Text(piece.symbol)
-                        .font(.system(size: 28, weight: .bold)) // Reduced from 32
-                        .foregroundColor(piece.isWhite ? .black : .white)
-                        .background(
-                            Circle()
-                                .fill(piece.isWhite ? Color.white : Color.black)
-                                .frame(width: 30, height: 30)
-                        )
+                        .font(.system(size: 26, weight: .black))
+                        .foregroundColor(piece.isWhite ? Color(red: 0.1, green: 0.1, blue: 0.1) : Color(red: 0.9, green: 0.9, blue: 0.9))
+                        .shadow(color: piece.isWhite ? Color.white.opacity(0.9) : Color.black.opacity(0.7), radius: 0.5, x: 0, y: 0)
+                        .shadow(color: piece.isWhite ? Color.black.opacity(0.3) : Color.white.opacity(0.3), radius: 1, x: 0, y: 0)
                 }
             }
         }
         .buttonStyle(PlainButtonStyle())
-    }
-    
-    private var fenDisplayView: some View {
-        Text("FEN: \(fen)")
-            .font(.caption)
-            .font(.system(.caption, design: .monospaced))
-            .padding(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
-            .background(Color.blue.opacity(0.1))
-            .cornerRadius(6)
-            .padding(.top, 8)
     }
     
     private func handleSquareTap(row: Int, col: Int) {
