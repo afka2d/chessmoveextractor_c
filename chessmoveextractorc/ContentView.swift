@@ -1363,7 +1363,7 @@ class LocalChessService {
                                 }
                             }
                         }
-                    } catch {
+        } catch {
                         debugLogger.log("Failed to parse JSON for debug images: \(error)")
                     }
                 }
@@ -1745,7 +1745,7 @@ class LocalChessService {
             }
         } catch {
             debugLogger.log("Error in recognize_chess_position_with_cursor_description: \(error.localizedDescription)")
-            throw error
+                    throw error
         }
     }
 }
@@ -1975,7 +1975,7 @@ class CameraManager: NSObject, ObservableObject {
                     // Show success message briefly
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                         // The success will be visible in the updated position result
-                    }
+                }
             }
         } catch {
             print("❌ Error sending corrected corners to API: \(error)")
@@ -2029,7 +2029,7 @@ extension CameraManager: AVCapturePhotoCaptureDelegate {
                 self.capturedPhotos.append(capturedPhoto)
                 
                 // No API calls here - just store the photo and let user manually adjust corners
-                if let index = self.capturedPhotos.firstIndex(where: { $0.id == capturedPhoto.id }) {
+                    if let index = self.capturedPhotos.firstIndex(where: { $0.id == capturedPhoto.id }) {
                     // Set default corners for manual adjustment
                     self.capturedPhotos[index].manualCorners = [
                         CGPoint(x: 0.1, y: 0.1),   // Top-left
@@ -2039,7 +2039,7 @@ extension CameraManager: AVCapturePhotoCaptureDelegate {
                     ]
                     
                     // Mark as not processing
-                    self.capturedPhotos[index].isProcessing = false
+                        self.capturedPhotos[index].isProcessing = false
                     
                     print("📸 Photo captured and stored. User can now manually adjust corners and press Analyze Position.")
                 }
@@ -2212,19 +2212,19 @@ struct CapturedPhotosView: View {
                         .onTapGesture(count: 2) {
                             // Open full screen editor for this photo
                             editingPhotoId = EditingPhotoID(id: photo.id)
-                                                // Use manual corners if set, else default to image corners
-                    let initialCorners: [CGPoint]
-                    if let manual = photo.manualCorners, manual.count == 4 {
-                        initialCorners = manual
-                    } else {
-                        // Default to image corners (normalized)
-                        initialCorners = [
-                            CGPoint(x: 0, y: 0),
-                            CGPoint(x: 1, y: 0),
-                            CGPoint(x: 1, y: 1),
-                            CGPoint(x: 0, y: 1)
-                        ]
-                    }
+                            // Use manual corners if set, else default to image corners
+                            let initialCorners: [CGPoint]
+                            if let manual = photo.manualCorners, manual.count == 4 {
+                                initialCorners = manual
+                            } else {
+                                // Default to image corners (normalized)
+                                initialCorners = [
+                                    CGPoint(x: 0, y: 0),
+                                    CGPoint(x: 1, y: 0),
+                                    CGPoint(x: 1, y: 1),
+                                    CGPoint(x: 0, y: 1)
+                                ]
+                            }
                             fullscreenCorners = initialCorners
                         }
                     
@@ -2313,6 +2313,20 @@ struct CapturedPhotosView: View {
                                 .cornerRadius(4)
                         }
                     }
+                    
+                    // Interactive Chessboard
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Interactive Chessboard:")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                        
+                        ChessboardView(fen: positionResult.fen)
+                            .frame(height: 300) // Reduced height for better fit
+                            .cornerRadius(8)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
                     
                     // 2D Board
                     if let board2d = positionResult.board2d {
@@ -2503,8 +2517,8 @@ struct CapturedPhotosView: View {
     
         private func sendCorrectedCornersToAPI(photo: CapturedPhoto, corners: [CGPoint]) {
         Task {
-            // Send the image with manually adjusted corners to the API
-            await cameraManager.sendCorrectedCornersToAPI(for: photo.id, corners: corners)
+        // Send the image with manually adjusted corners to the API
+        await cameraManager.sendCorrectedCornersToAPI(for: photo.id, corners: corners)
         }
     }
     
@@ -2595,29 +2609,29 @@ struct CapturedPhotosView: View {
     
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 20) {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 300))], spacing: 20) {
-                        ForEach(cameraManager.capturedPhotos) { photo in
-                            photoCard(photo)
-                                .overlay(
-                                    deleteButton(photo)
-                                        .padding(8),
-                                    alignment: .topTrailing
-                                )
+                ScrollView {
+                    VStack(spacing: 20) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300))], spacing: 20) {
+                            ForEach(cameraManager.capturedPhotos) { photo in
+                                photoCard(photo)
+                                    .overlay(
+                                        deleteButton(photo)
+                                            .padding(8),
+                                        alignment: .topTrailing
+                                    )
+                            }
                         }
+                        .padding()
                     }
-                    .padding()
                 }
-            }
-            .navigationTitle("Saved Photos")
-            .navigationBarTitleDisplayMode(.inline)
+                .navigationTitle("Saved Photos")
+                .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showingShareSheet) {
                 if let shareSheet = shareSheet {
                     shareSheet
                 }
             }
-            .alert("Delete Photo", isPresented: $showingDeleteAlert) {
+                        .alert("Delete Photo", isPresented: $showingDeleteAlert) {
                 Button("Cancel", role: .cancel) {
                     photoToDelete = nil
                 }
@@ -2632,9 +2646,9 @@ struct CapturedPhotosView: View {
             }
             .fullScreenCover(item: $editingPhotoId) { editingId in
                 if let photo = cameraManager.capturedPhotos.first(where: { $0.id == editingId.id }) {
-                    FullScreenCornerEditor(
-                        photo: photo,
-                        corners: $fullscreenCorners,
+                FullScreenCornerEditor(
+                    photo: photo,
+                    corners: $fullscreenCorners,
                         onDone: {
                             // Save corners back to photo
                             if let index = cameraManager.capturedPhotos.firstIndex(where: { $0.id == editingId.id }) {
@@ -2644,9 +2658,9 @@ struct CapturedPhotosView: View {
                         },
                         onSendToAPI: { correctedCorners in
                             sendCorrectedCornersToAPI(photo: photo, corners: correctedCorners)
-                        },
-                        onSaveGreyedImage: { image in
-                            saveBlurredImageToPhotos(image)
+                    },
+                    onSaveGreyedImage: { image in
+                        saveBlurredImageToPhotos(image)
                         }
                     )
                 }
@@ -3593,7 +3607,7 @@ struct FullScreenCornerEditor: View {
                 Spacer()
                 VStack(spacing: 16) {
                     // Large Analyze button
-                    Button(action: {
+                        Button(action: {
                         onSendToAPI(corners)
                     }) {
                         HStack {
@@ -3603,13 +3617,13 @@ struct FullScreenCornerEditor: View {
                                 .font(.title2)
                                 .fontWeight(.semibold)
                         }
-                        .foregroundColor(.white)
+                            .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(Color.blue)
                         .cornerRadius(12)
-                    }
-                    
+                        }
+                        
                     HStack(spacing: 20) {
                         // Small save button
                         Button(action: {
@@ -3628,14 +3642,14 @@ struct FullScreenCornerEditor: View {
                         Spacer()
                         
                         Text("Drag corners to adjust, then tap Analyze")
-                            .font(.caption)
+                                .font(.caption)
                             .foregroundColor(.yellow)
                             .multilineTextAlignment(.center)
                         
                         Spacer()
                     }
                 }
-                .padding(.bottom, 32)
+                        .padding(.bottom, 32)
             }
         }
     }
