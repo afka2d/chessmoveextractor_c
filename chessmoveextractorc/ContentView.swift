@@ -14,54 +14,15 @@ import CoreML
 import Photos
 import UniformTypeIdentifiers
 
-// API Response Types
+// Simple API Response Types
 struct ChessPositionResponse: Codable {
     let fen: String
     let hasChessBoard: Bool?
     let error: String?
     let message: String?
     let lichess_url: String?
-    let debug_images: [String: String]? // Base64-encoded debug images
-    let ascii: String? // ASCII art of the board
-    let legal_position: Bool? // Is the position legal
-    let debug_image_paths: [String: String]? // File paths to saved debug images
-    let corners: [[Double]]? // The corners used for recognition
-    let processing_time: String? // Timestamp
-    let image_info: [String: String]? // Metadata about the uploaded image
-    let debug_info: [String: String]? // Pipeline step status
-}
-
-struct ChessPositionDescriptionResponse: Codable {
-    let fen: String
-    let ascii: String? // ASCII art of the board
-    let lichess_url: String?
-    let legal_position: Bool? // Is the position legal
-    let position_description: String? // Chess position description (API field name)
-    let board_2d: [[String]]? // 2D board representation
-    let pieces_found: Int? // Number of pieces found
-    let debug_images: [String: String]? // Base64-encoded debug images
-    let debug_image_paths: [String: String]? // File paths to saved debug images
-    let corners: [[Double]]? // The corners used for recognition
-    let processing_time: Double? // Timestamp
-    let image_info: [String: String]? // Metadata about the uploaded image
-    let debug_info: [String: String]? // Pipeline step status
-    let error: ErrorInfo? // Error information
-    
-    struct ErrorInfo: Codable {
-        let type: String?
-        let message: String?
-        let suggestion: String?
-    }
-    
-    // Computed property to match our expected interface
-    var description: String? {
-        return position_description
-    }
-    
-    // Computed property to match our expected interface
-    var hasChessBoard: Bool {
-        return legal_position ?? false
-    }
+    let ascii: String?
+    let legal_position: Bool?
 }
 
 struct CornersResponse: Codable {
@@ -69,7 +30,6 @@ struct CornersResponse: Codable {
     let hasChessBoard: Bool
     let error: String?
     let message: String?
-    let debug_images: [String: String]? // New field for base64-encoded debug images
 }
 
 struct Corner: Codable {
@@ -1038,474 +998,27 @@ extension String {
     }
 }
 
-class LocalChessAPIService {
-    private let baseURL = "https://api.chesspositionscanner.store" // Updated baseURL to the correct one
 
-    func recognizePosition(imageData: Data) async throws -> (success: Bool, fen: String, lichessURL: String?) {
-        let url = URL(string: "\(baseURL)/recognize_chess_position")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
 
-        let boundary = UUID().uuidString
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
-        var body = Data()
 
-        // Add image data with proper headers
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"image\"; filename=\"image.jpg\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
-        body.append(imageData)
-        body.append("\r\n".data(using: .utf8)!)
 
-        // Add color parameter
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"color\"\r\n\r\n".data(using: .utf8)!)
-        body.append("white\r\n".data(using: .utf8)!)
 
-        // Add final boundary
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
 
-        request.httpBody = body
 
-        print("Sending request to API: \(url)")
-        print("Request body size: \(body.count) bytes")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NSError(domain: "LocalChessAPI", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
-        }
 
-         print("API Response Status Code: \(httpResponse.statusCode)")
 
-        guard httpResponse.statusCode == 200 else {
-            print("API Error: Status code \(httpResponse.statusCode)")
-            if let errorString = String(data: data, encoding: .utf8) {
-                print("Error response: \(errorString)")
-            }
-            throw NSError(domain: "LocalChessAPI", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Server returned status code \(httpResponse.statusCode)"])
-        }
 
-        // Parse the response using Codable
-        let decoder = JSONDecoder()
-        do {
-            let chessResponse = try decoder.decode(ChessPositionResponse.self, from: data)
-            print("API Response - FEN: \(chessResponse.fen), Legal: \(chessResponse.hasChessBoard)")
-            print("ASCII Board:\n\(chessResponse.message ?? "")")
-            print("Lichess URL: \(chessResponse.lichess_url)")
-
-            // Return the FEN string even if the position is not legal
-            return (chessResponse.hasChessBoard ?? false, chessResponse.fen, chessResponse.lichess_url)
-        } catch {
-            print("Error decoding recognize position response: \(error)")
-            if let errorString = String(data: data, encoding: .utf8) {
-                print("Raw response: \(errorString)")
-            }
-            return (false, "", nil)
-        }
-    }
-
-    // New function to call the detect_corners endpoint
-    func detectCorners(imageData: Data) async throws -> [CGPoint]? {
-        let url = URL(string: "\(baseURL)/detect_corners")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-
-        let boundary = UUID().uuidString
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-
-        var body = Data()
-
-        // Add image data
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"image\"; filename=\"image.jpg\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
-        body.append(imageData)
-        body.append("\r\n".data(using: .utf8)!)
-
-        // Add final boundary
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-
-        request.httpBody = body
-
-        print("Sending request to API: \(url)")
-        print("Request body size: \(body.count) bytes")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NSError(domain: "LocalChessAPI", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
-        }
-
-         print("API Response Status Code: \(httpResponse.statusCode)")
-
-        guard httpResponse.statusCode == 200 else {
-            print("API Error: Status code \(httpResponse.statusCode)")
-            if let errorString = String(data: data, encoding: .utf8) {
-                print("Error response: \(errorString)")
-            }
-            throw NSError(domain: "LocalChessAPI", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Server returned status code \(httpResponse.statusCode)"])
-        }
-
-        // Parse the response
-        let decoder = JSONDecoder()
-        do {
-            let cornersResponse = try decoder.decode(CornersResponse.self, from: data)
-            print("API Response - Corners: \(cornersResponse.corners)")
-            print("API Response - Message: \(cornersResponse.message ?? "nil")")
-
-            // Convert [[Double]] to [CGPoint]
-            let corners = cornersResponse.corners.map { CGPoint(x: $0.x, y: $0.y) }
-            
-            // Process debug images from corners API
-            if let debugImagesBase64 = cornersResponse.debug_images {
-                print("🔍 Debug images received from corners API: \(debugImagesBase64.keys.sorted())")
-                var debugImages: [String: UIImage] = [:]
-                for (key, base64String) in debugImagesBase64 {
-                    print("🔍 Processing corners debug image: \(key)")
-                    if let image = base64String.decodeBase64Image() {
-                        debugImages[key] = image
-                        print("✅ Successfully decoded corners debug image: \(key)")
-                    } else {
-                        print("❌ Failed to decode corners debug image: \(key)")
-                    }
-                }
-                print("🔍 Final corners debug images count: \(debugImages.count)")
-            }
-            
-            return corners
-
-        } catch {
-            print("Error decoding detect corners response: \(error)")
-             if let errorString = String(data: data, encoding: .utf8) {
-                print("Raw response: \(errorString)")
-            }
-            return nil
-        }
-    }
-
-    func pixelBufferToData(_ pixelBuffer: CVPixelBuffer) -> Data? {
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        let context = CIContext()
-
-        // Create a properly oriented image
-        let transformedImage = ciImage.transformed(by: CGAffineTransform(scaleX: 1.0, y: -1.0))
-
-        // Ensure we have a valid image
-        guard let cgImage = context.createCGImage(transformedImage, from: transformedImage.extent) else {
-            print("Failed to create CGImage from CIImage")
-            return nil
-        }
-
-        // Create UIImage with proper orientation
-        let uiImage = UIImage(cgImage: cgImage, scale: 1.0, orientation: .up)
-
-        // Convert to JPEG with high quality
-        guard let imageData = uiImage.jpegData(compressionQuality: 0.9) else {
-            print("Failed to convert UIImage to JPEG data")
-            return nil
-        }
-
-        print("Created image data with size: \(imageData.count) bytes")
-        return imageData
-    }
-}
 
 class LocalChessService {
-    private let recognizeURL = "https://api.chesspositionscanner.store/recognize_chess_position"
-    private let recognizeWithDescriptionURL = "https://api.chesspositionscanner.store/recognize_chess_position_with_cursor_description"
-    private let detectCornersURL = "https://api.chesspositionscanner.store/detect_corners"
+    private let recognizeURL = "https://api.chesspositionscanner.store/recognize_chess_position_with_corners"
     private let debugLogger = DebugLogger()
-    
-    private func createMultipartFormData(imageData: Data) -> (Data, String) {
-        let boundary = UUID().uuidString
-        var body = Data()
-        
-        // Add image data
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"image\"; filename=\"image.jpg\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
-        body.append(imageData)
-        body.append("\r\n".data(using: .utf8)!)
-        
-        // Add color parameter (required by the API)
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"color\"\r\n\r\n".data(using: .utf8)!)
-        body.append("white\r\n".data(using: .utf8)!)
-        
-        // Add debug parameter to help identify issues
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"debug\"\r\n\r\n".data(using: .utf8)!)
-        body.append("true\r\n".data(using: .utf8)!)
-        
-        // Add final boundary
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-        
-        return (body, boundary)
-    }
-    
-    func recognizePosition(imageData: Data) async throws -> (ChessPositionResponse?, String?, [String: UIImage]?) {
-        guard let url = URL(string: recognizeURL) else {
-            debugLogger.log("Invalid URL for recognize_chess_position")
-            throw URLError(.badURL)
-        }
-        
-        // Try with original image data first
-        var result = try await makeRecognizeRequest(imageData: imageData)
-        
-        // If it fails with 502 error, retry once after a short delay
-        if result.1 != nil && result.1!.contains("502") {
-            debugLogger.log("First attempt failed with 502 error, retrying after 2 seconds...")
-            try await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
-            result = try await makeRecognizeRequest(imageData: imageData)
-        }
-        
-        // If it fails with 500 error, try with different compression
-        if result.1 != nil && result.1!.contains("500") {
-            debugLogger.log("First attempt failed with 500 error, trying with different compression...")
-            
-            // Try with higher quality JPEG
-            if let uiImage = UIImage(data: imageData),
-               let highQualityData = uiImage.jpegData(compressionQuality: 0.95) {
-                result = try await makeRecognizeRequest(imageData: highQualityData)
-            }
-            
-            // If still failing, try with PNG
-            if result.1 != nil && result.1!.contains("500") {
-                debugLogger.log("JPEG attempts failed, trying with PNG...")
-                if let uiImage = UIImage(data: imageData),
-                   let pngData = uiImage.pngData() {
-                    result = try await makeRecognizeRequest(imageData: pngData)
-                }
-            }
-            
-            // If still failing, try with a smaller resized image
-            if result.1 != nil && result.1!.contains("500") {
-                debugLogger.log("All format attempts failed, trying with smaller resized image...")
-                if let uiImage = UIImage(data: imageData) {
-                    let resizedImage = uiImage.resized(to: CGSize(width: 800, height: 600))
-                    if let resizedData = resizedImage.jpegData(compressionQuality: 0.8) {
-                        result = try await makeRecognizeRequest(imageData: resizedData)
-                    }
-                }
-            }
-            
-            // If still failing, try with normalized orientation
-            if result.1 != nil && result.1!.contains("500") {
-                debugLogger.log("All size attempts failed, trying with normalized orientation...")
-                if let uiImage = UIImage(data: imageData) {
-                    let normalizedImage = UIImage(cgImage: uiImage.cgImage!, scale: uiImage.scale, orientation: .up)
-                    if let normalizedData = normalizedImage.jpegData(compressionQuality: 0.8) {
-                        result = try await makeRecognizeRequest(imageData: normalizedData)
-                    }
-                }
-            }
-        }
-        
-        // If it fails with 502 error, retry once after a short delay
-        if result.1 != nil && result.1!.contains("502") {
-            debugLogger.log("First attempt failed with 502 error, retrying after delay...")
-            try await Task.sleep(nanoseconds: 2_000_000_000) // 2 second delay
-            result = try await makeRecognizeRequest(imageData: imageData)
-        }
-        
-        return (result.0, result.1, result.2)
-    }
-    
-    private func makeRecognizeRequest(imageData: Data) async throws -> (ChessPositionResponse?, String?, [String: UIImage]?) {
-        let (body, boundary) = createMultipartFormData(imageData: imageData)
-        
-        var request = URLRequest(url: URL(string: recognizeURL)!)
-        request.httpMethod = "POST"
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
-        
-        debugLogger.log("Making recognize_chess_position API call with \(imageData.count) bytes")
-        debugLogger.log("Image data size: \(imageData.count) bytes")
-        if let uiImage = UIImage(data: imageData) {
-            debugLogger.log("Image dimensions: \(uiImage.size.width) x \(uiImage.size.height)")
-            debugLogger.log("Image scale: \(uiImage.scale)")
-            debugLogger.log("Image orientation: \(uiImage.imageOrientation.rawValue)")
-        }
-        debugLogger.logAPICall(endpoint: "recognize_chess_position", requestData: imageData)
-        
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                debugLogger.log("Invalid response type")
-                throw URLError(.badServerResponse)
-            }
-            
-            debugLogger.log("API Response Status Code: \(httpResponse.statusCode)")
-            
-            // Always try to decode the response to extract debug images, even on error
-            var debugImages: [String: UIImage]?
-            if let responseString = String(data: data, encoding: .utf8) {
-                debugLogger.log("Raw API Response: \(responseString)")
-                
-                // Try to decode as JSON to extract debug images
-                if let jsonData = responseString.data(using: .utf8) {
-                    do {
-                        if let json = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                           let debugImagesBase64 = json["debug_images"] as? [String: String] {
-                            
-                            debugLogger.log("🔍 Debug images found in API response (even on error): \(debugImagesBase64.keys.sorted())")
-                            debugImages = [:]
-                            for (key, base64String) in debugImagesBase64 {
-                                debugLogger.log("🔍 Processing debug image from error response: \(key)")
-                                if let image = base64String.decodeBase64Image() {
-                                    debugImages?[key] = image
-                                    debugLogger.log("✅ Successfully decoded debug image from error response: \(key)")
-                                } else {
-                                    debugLogger.log("❌ Failed to decode debug image from error response: \(key)")
-                                }
-                            }
-                        }
-        } catch {
-                        debugLogger.log("Failed to parse JSON for debug images: \(error)")
-                    }
-                }
-            }
-            
-            if httpResponse.statusCode != 200 {
-                let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-                debugLogger.log("API Error: \(errorMessage)")
-                
-                // Special handling for 500 errors which might be due to image format issues
-                if httpResponse.statusCode == 500 {
-                    debugLogger.log("Server error (500) - this might be due to image format issues")
-                    return (nil, "Server processing error (500): \(errorMessage). This might be due to image format or preprocessing issues.", debugImages)
-                }
-                
-                // Special handling for 502 errors (Bad Gateway)
-                if httpResponse.statusCode == 502 {
-                    debugLogger.log("Server error (502) - Bad Gateway, server is temporarily unavailable")
-                    return (nil, "Server temporarily unavailable (502 Bad Gateway). Please try again in a few moments. This is a server-side issue, not a problem with your image.", debugImages)
-                }
-                
-                // Special handling for 503 errors (Service Unavailable)
-                if httpResponse.statusCode == 503 {
-                    debugLogger.log("Server error (503) - Service Unavailable")
-                    return (nil, "Server is temporarily overloaded (503 Service Unavailable). Please try again later.", debugImages)
-                }
-                
-                return (nil, "Server returned status code \(httpResponse.statusCode): \(errorMessage)", debugImages)
-            }
-            
-            do {
-                let result = try JSONDecoder().decode(ChessPositionResponse.self, from: data)
-                debugLogger.log("Successfully decoded recognize_chess_position response")
-                
-                // Add detailed logging for debug images
-                if let debugImages = result.debug_images {
-                    debugLogger.log("🔍 Debug images found in API response: \(debugImages.count) images")
-                    debugLogger.log("🔍 Debug image keys: \(debugImages.keys.sorted())")
-                    for (key, base64String) in debugImages {
-                        debugLogger.log("🔍 Debug image '\(key)': length=\(base64String.count), startsWith=\(String(base64String.prefix(50)))")
-                    }
-                } else {
-                    debugLogger.log("❌ No debug_images field in API response")
-                }
-                
-                debugLogger.logAPIResponse(endpoint: "recognize_chess_position", response: data)
-                return (result, nil, debugImages)
-            } catch {
-                debugLogger.log("Error decoding response: \(error)")
-                if let responseString = String(data: data, encoding: .utf8) {
-                    debugLogger.log("Failed to decode response: \(responseString)")
-                }
-                return (nil, "Failed to decode response: \(error.localizedDescription)", debugImages)
-            }
-        } catch {
-            debugLogger.log("Error in recognize_chess_position: \(error.localizedDescription)")
-            throw error
-        }
-    }
-    
-    func detectCorners(imageData: Data) async throws -> (CornersResponse?, String?, [String: UIImage]?) {
-        guard let url = URL(string: detectCornersURL) else {
-            debugLogger.log("Invalid URL for detect_corners")
-            throw URLError(.badURL)
-        }
-        
-        let (body, boundary) = createMultipartFormData(imageData: imageData)
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
-        
-        debugLogger.log("Making detect_corners API call with \(imageData.count) bytes")
-        debugLogger.logAPICall(endpoint: "detect_corners", requestData: imageData)
-        
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                debugLogger.log("Invalid response type")
-                throw URLError(.badServerResponse)
-            }
-            
-            debugLogger.log("API Response Status Code: \(httpResponse.statusCode)")
-            
-            // Always try to decode the response to extract debug images, even on error
-            var debugImages: [String: UIImage]?
-            if let responseString = String(data: data, encoding: .utf8) {
-                debugLogger.log("Raw API Response: \(responseString)")
-                
-                // Try to decode as JSON to extract debug images
-                if let jsonData = responseString.data(using: .utf8) {
-                    do {
-                        if let json = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                           let debugImagesBase64 = json["debug_images"] as? [String: String] {
-                            
-                            debugLogger.log("🔍 Debug images found in corners API response (even on error): \(debugImagesBase64.keys.sorted())")
-                            debugImages = [:]
-                            for (key, base64String) in debugImagesBase64 {
-                                debugLogger.log("🔍 Processing corners debug image from error response: \(key)")
-                                if let image = base64String.decodeBase64Image() {
-                                    debugImages?[key] = image
-                                    debugLogger.log("✅ Successfully decoded corners debug image from error response: \(key)")
-                                } else {
-                                    debugLogger.log("❌ Failed to decode corners debug image from error response: \(key)")
-                                }
-                            }
-                        }
-                    } catch {
-                        debugLogger.log("Failed to parse JSON for debug images: \(error)")
-                    }
-                }
-            }
-            
-            if httpResponse.statusCode != 200 {
-                let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-                debugLogger.log("API Error: \(errorMessage)")
-                return (nil, "Server returned status code \(httpResponse.statusCode): \(errorMessage)", debugImages)
-            }
-            
-            do {
-                let result = try JSONDecoder().decode(CornersResponse.self, from: data)
-                debugLogger.log("Successfully decoded detect_corners response")
-                debugLogger.logAPIResponse(endpoint: "detect_corners", response: data)
-                return (result, nil, debugImages)
-            } catch {
-                debugLogger.log("Error decoding response: \(error)")
-                if let responseString = String(data: data, encoding: .utf8) {
-                    debugLogger.log("Failed to decode response: \(responseString)")
-                }
-                return (nil, "Failed to decode response: \(error.localizedDescription)", debugImages)
-            }
-        } catch {
-            debugLogger.log("Error in detect_corners: \(error.localizedDescription)")
-            throw error
-        }
-    }
     
     func recognizePositionWithCorners(imageData: Data, corners: [CGPoint]) async throws -> (ChessPositionResponse?, String?, [String: UIImage]?) {
         guard let url = URL(string: recognizeURL) else {
-            debugLogger.log("Invalid URL for recognize_chess_position with corners")
+            debugLogger.log("Invalid URL for recognize_chess_position_with_corners")
             throw URLError(.badURL)
         }
         
@@ -1516,9 +1029,8 @@ class LocalChessService {
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
         
-        debugLogger.log("Making recognize_chess_position API call with \(imageData.count) bytes and manual corners")
+        debugLogger.log("Making recognize_chess_position_with_corners API call with \(imageData.count) bytes and manual corners")
         debugLogger.log("Manual corners: \(corners.map { "(\($0.x), \($0.y))" }.joined(separator: ", "))")
-        debugLogger.logAPICall(endpoint: "recognize_chess_position_with_corners", requestData: imageData)
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -1530,55 +1042,25 @@ class LocalChessService {
             
             debugLogger.log("API Response Status Code: \(httpResponse.statusCode)")
             
-            // Always try to decode the response to extract debug images, even on error
-            var debugImages: [String: UIImage]?
-            if let responseString = String(data: data, encoding: .utf8) {
-                debugLogger.log("Raw API Response: \(responseString)")
-                
-                // Try to decode as JSON to extract debug images
-                if let jsonData = responseString.data(using: .utf8) {
-                    do {
-                        if let json = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                           let debugImagesBase64 = json["debug_images"] as? [String: String] {
-                            
-                            debugLogger.log("🔍 Debug images found in API response (even on error): \(debugImagesBase64.keys.sorted())")
-                            debugImages = [:]
-                            for (key, base64String) in debugImagesBase64 {
-                                debugLogger.log("🔍 Processing debug image from error response: \(key)")
-                                if let image = base64String.decodeBase64Image() {
-                                    debugImages?[key] = image
-                                    debugLogger.log("✅ Successfully decoded debug image from error response: \(key)")
-                                } else {
-                                    debugLogger.log("❌ Failed to decode debug image from error response: \(key)")
-                                }
-                            }
-                        }
-                    } catch {
-                        debugLogger.log("Failed to parse JSON for debug images: \(error)")
-                    }
-                }
-            }
-            
             if httpResponse.statusCode != 200 {
                 let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
                 debugLogger.log("API Error: \(errorMessage)")
-                return (nil, "Server returned status code \(httpResponse.statusCode): \(errorMessage)", debugImages)
+                return (nil, "Server returned status code \(httpResponse.statusCode): \(errorMessage)", nil)
             }
             
             do {
                 let result = try JSONDecoder().decode(ChessPositionResponse.self, from: data)
-                debugLogger.log("Successfully decoded recognize_chess_position with corners response")
-                debugLogger.logAPIResponse(endpoint: "recognize_chess_position_with_corners", response: data)
-                return (result, nil, debugImages)
+                debugLogger.log("Successfully decoded recognize_chess_position_with_corners response")
+                return (result, nil, nil)
             } catch {
                 debugLogger.log("Error decoding response: \(error)")
                 if let responseString = String(data: data, encoding: .utf8) {
                     debugLogger.log("Failed to decode response: \(responseString)")
                 }
-                return (nil, "Failed to decode response: \(error.localizedDescription)", debugImages)
+                return (nil, "Failed to decode response: \(error.localizedDescription)", nil)
             }
         } catch {
-            debugLogger.log("Error in recognize_chess_position with corners: \(error.localizedDescription)")
+            debugLogger.log("Error in recognize_chess_position_with_corners: \(error.localizedDescription)")
             throw error
         }
     }
@@ -1600,154 +1082,56 @@ class LocalChessService {
         body.append("white\r\n".data(using: .utf8)!)
         
         // Add corners parameter
-        let cornersString = corners.map { "\($0.x),\($0.y)" }.joined(separator: ";")
+        // API expects JSON array format: [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
+        // Convert normalized coordinates (0-1) to actual pixel coordinates
+        // Corner order: Top-left, top-right, bottom-right, bottom-left (clockwise)
+        // Get image dimensions from the image data
+        let image = UIImage(data: imageData)
+        let imageWidth = image?.size.width ?? 1080.0
+        let imageHeight = image?.size.height ?? 1920.0
+        
+        let pixelCorners = corners.map { CGPoint(x: $0.x * imageWidth, y: $0.y * imageHeight) }
+        let cornersString = "[\(pixelCorners.map { "[\(Int($0.x)), \(Int($0.y))]" }.joined(separator: ", "))]"
+        
+        debugLogger.log("Image dimensions: \(imageWidth) x \(imageHeight) pixels")
+        debugLogger.log("Normalized corners: \(corners.map { "(\($0.x), \($0.y))" })")
+        debugLogger.log("Pixel corners: \(pixelCorners.map { "(\(Int($0.x)), \(Int($0.y)))" })")
+        debugLogger.log("Formatted corners string: '\(cornersString)'")
+        debugLogger.log("Expected API format: [[x1, y1], [x2, y2], [x3, y3], [x4, y4]] (pixel coordinates)")
+        
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"corners\"\r\n\r\n".data(using: .utf8)!)
         body.append("\(cornersString)\r\n".data(using: .utf8)!)
         
-        // Add debug parameter to help identify issues
+        // Add debug parameters as specified by the API
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"debug\"\r\n\r\n".data(using: .utf8)!)
-        body.append("true\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"debug_image_width\"\r\n\r\n".data(using: .utf8)!)
+        body.append("800\r\n".data(using: .utf8)!)
+        
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"debug_image_height\"\r\n\r\n".data(using: .utf8)!)
+        body.append("600\r\n".data(using: .utf8)!)
         
         // Add final boundary
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         
+        // Debug: Log the request body for troubleshooting
+        if let bodyString = String(data: body, encoding: .utf8) {
+            debugLogger.log("Request body preview: \(String(bodyString.prefix(500)))")
+        }
+        
+        // Log the complete request structure for API debugging
+        debugLogger.log("API Request Structure:")
+        debugLogger.log("- image: JPEG file (\(imageData.count) bytes)")
+        debugLogger.log("- color: white")
+        debugLogger.log("- corners: \(cornersString) (JSON array)")
+        debugLogger.log("- debug_image_width: 800")
+        debugLogger.log("- debug_image_height: 600")
+        
         return (body, boundary)
     }
     
-    func recognizePositionWithDescription(imageData: Data, corners: [CGPoint]) async throws -> (ChessPositionDescriptionResponse?, String?, [String: UIImage]?) {
-                    guard let url = URL(string: recognizeWithDescriptionURL) else {
-                debugLogger.log("Invalid URL for recognize_chess_position_with_cursor_description")
-                throw URLError(.badURL)
-            }
-        
-        let (body, boundary) = createMultipartFormDataWithCorners(imageData: imageData, corners: corners)
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
-        
-        debugLogger.log("Making recognize_chess_position_with_cursor_description API call with \(imageData.count) bytes and manual corners")
-        debugLogger.log("API URL: \(recognizeWithDescriptionURL)")
-        debugLogger.log("Manual corners: \(corners.map { "(\($0.x), \($0.y))" }.joined(separator: ", "))")
-        debugLogger.logAPICall(endpoint: "recognize_chess_position_with_cursor_description", requestData: imageData)
-        
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                debugLogger.log("Invalid response type")
-                throw URLError(.badServerResponse)
-            }
-            
-            debugLogger.log("API Response Status Code: \(httpResponse.statusCode)")
-            
-            // Always try to decode the response to extract debug images, even on error
-            var debugImages: [String: UIImage]?
-            if let responseString = String(data: data, encoding: .utf8) {
-                debugLogger.log("Raw API Response: \(responseString)")
-                
-                // Try to decode as JSON to extract debug images
-                if let jsonData = responseString.data(using: .utf8) {
-                    do {
-                        if let json = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                           let debugImagesBase64 = json["debug_images"] as? [String: String] {
-                            
-                            debugLogger.log("🔍 Debug images found in API response (even on error): \(debugImagesBase64.keys.sorted())")
-                            debugImages = [:]
-                            for (key, base64String) in debugImagesBase64 {
-                                debugLogger.log("🔍 Processing debug image from error response: \(key)")
-                                if let image = base64String.decodeBase64Image() {
-                                    debugImages?[key] = image
-                                    debugLogger.log("✅ Successfully decoded debug image from error response: \(key)")
-                                } else {
-                                    debugLogger.log("❌ Failed to decode debug image from error response: \(key)")
-                                }
-                            }
-                        }
-                    } catch {
-                        debugLogger.log("Failed to parse JSON for debug images: \(error)")
-                    }
-                }
-            }
-            
-            if httpResponse.statusCode != 200 {
-                let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-                debugLogger.log("API Error: \(errorMessage)")
-                return (nil, "Server returned status code \(httpResponse.statusCode): \(errorMessage)", debugImages)
-            }
-            
-            do {
-                let result = try JSONDecoder().decode(ChessPositionDescriptionResponse.self, from: data)
-                debugLogger.log("Successfully decoded recognize_chess_position_with_cursor_description response")
-                debugLogger.log("FEN: \(result.fen)")
-                debugLogger.log("Position Description: \(result.position_description ?? "nil")")
-                debugLogger.log("Computed Description: \(result.description ?? "nil")")
-                debugLogger.logAPICall(endpoint: "recognize_chess_position_with_cursor_description", requestData: data)
-                return (result, nil, debugImages)
-            } catch {
-                debugLogger.log("Error decoding response: \(error)")
-                if let responseString = String(data: data, encoding: .utf8) {
-                    debugLogger.log("Raw response that failed to decode: \(responseString)")
-                }
-                
-                // Try to decode as regular ChessPositionResponse as fallback
-                do {
-                    let fallbackResult = try JSONDecoder().decode(ChessPositionResponse.self, from: data)
-                    debugLogger.log("Successfully decoded as fallback ChessPositionResponse")
-                    
-                    // Convert to ChessPositionDescriptionResponse
-                    let result = ChessPositionDescriptionResponse(
-                        fen: fallbackResult.fen,
-                        ascii: fallbackResult.ascii,
-                        lichess_url: fallbackResult.lichess_url,
-                        legal_position: fallbackResult.legal_position,
-                        position_description: nil, // No description in fallback response
-                        board_2d: nil, // No board_2d in fallback response
-                        pieces_found: nil, // No pieces_found in fallback response
-                        debug_images: fallbackResult.debug_images,
-                        debug_image_paths: fallbackResult.debug_image_paths,
-                        corners: fallbackResult.corners,
-                        processing_time: nil, // Convert if needed
-                        image_info: fallbackResult.image_info,
-                        debug_info: fallbackResult.debug_info,
-                        error: nil // No error info in fallback response
-                    )
-                    return (result, nil, debugImages)
-                } catch {
-                    // Try minimal FEN-only fallback
-                    do {
-                        let minimal = try JSONDecoder().decode(MinimalFENResponse.self, from: data)
-                        let result = ChessPositionDescriptionResponse(
-                            fen: minimal.fen,
-                            ascii: nil,
-                            lichess_url: nil,
-                            legal_position: nil,
-                            position_description: nil,
-                            board_2d: nil,
-                            pieces_found: nil,
-                            debug_images: nil,
-                            debug_image_paths: nil,
-                            corners: nil,
-                            processing_time: nil,
-                            image_info: nil,
-                            debug_info: nil,
-                            error: nil
-                        )
-                        return (result, nil, nil)
-                    } catch {
-                        debugLogger.log("Fallback decoding also failed: \(error)")
-                        return (nil, "Failed to decode response: \(error.localizedDescription). Raw response: \(String(data: data, encoding: .utf8) ?? "Unable to read response")", debugImages)
-                    }
-                }
-            }
-        } catch {
-            debugLogger.log("Error in recognize_chess_position_with_cursor_description: \(error.localizedDescription)")
-                    throw error
-        }
-    }
+
 }
 
 class CameraManager: NSObject, ObservableObject {
@@ -1920,21 +1304,14 @@ class CameraManager: NSObject, ObservableObject {
                 self.capturedPhotos[photoIndex].isSendingCornersToAPI = true
             }
             
-            // Create greyed image with chessboard focus for API (as the model was trained on greyed images)
+            // Create greyed image with chessboard focus for API
             let normalizedImage = photo.image.fixOrientation()
             let greyedImage = normalizedImage.createBlurredImageWithChessboardFocus(corners: corners)
             let imageData = greyedImage?.jpegData(compressionQuality: 0.95) ?? Data()
-            print("🔄 Sending corrected corners to description API: \(corners.map { "(\($0.x), \($0.y))" }.joined(separator: ", "))")
-            print("🔄 Image data size: \(imageData.count) bytes")
-            print("🔄 Original image size: \(photo.image.size)")
-            print("🔄 Normalized image size: \(normalizedImage.size)")
-            print("🔄 Original image orientation: \(photo.image.imageOrientation.rawValue)")
-            print("🔄 Normalized image orientation: \(normalizedImage.imageOrientation.rawValue)")
-            print("🔄 Using greyed image for API (model trained on greyed images)")
+            print("🔄 Sending corrected corners to API: \(corners.map { "(\($0.x), \($0.y))" }.joined(separator: ", "))")
             
-            // Use the new ChessCogService with manual corners endpoint
-            let chessService = ChessCogService()
-            let response = try await chessService.recognizePositionWithManualCorners(imageData: imageData, corners: corners)
+            // Use the simplified LocalChessService
+            let response = try await localChessService.recognizePositionWithCorners(imageData: imageData, corners: corners)
             
             await MainActor.run {
                 // Clear processing state
@@ -1943,38 +1320,26 @@ class CameraManager: NSObject, ObservableObject {
                 // Update manual corners
                 self.capturedPhotos[photoIndex].manualCorners = corners
                 
-                // Update position result with the new ChessCogResponse format
+                // Update position result with simplified format
+                if let result = response.0 {
                     self.capturedPhotos[photoIndex].positionResult = CapturedPhoto.PositionResult(
-                        fen: response.fen,
-                        lichessURL: response.lichessUrl,
-                        ascii: response.ascii,
-                        legalPosition: response.legalPosition,
-                        debugImages: nil, // No debug images in new format
-                        debugImagePaths: nil, // Not used in new format
-                        corners: response.corners.map { [Double($0[0]), Double($0[1])] },
-                        processingTime: response.processingTime?.description,
-                        imageInfo: nil, // Not used in new format
-                        debugInfo: nil, // Not used in new format
-                        description: response.positionDescription,
-                        board2d: nil, // Not used in new format
-                        piecesFound: response.piecesFound
+                        fen: result.fen
                     )
                     
-                    print("✅ Successfully analyzed position with new API endpoint!")
-                    print("🔍 FEN: \(response.fen)")
-                    print("🔍 Legal Position: \(response.legalPosition)")
-                    print("🔍 Pieces Found: \(response.piecesFound)")
-                    print("🔍 Processing Time: \(response.processingTime ?? 0.0) seconds")
+                    print("✅ Successfully analyzed position!")
+                    print("🔍 FEN: \(result.fen)")
                     
                     // Clear any previous errors
                     self.capturedPhotos[photoIndex].apiErrors = CapturedPhoto.APIErrors(
                         positionError: nil,
                         cornersError: nil
                     )
-                    
-                    // Show success message briefly
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        // The success will be visible in the updated position result
+                } else {
+                    // Handle error
+                    self.capturedPhotos[photoIndex].apiErrors = CapturedPhoto.APIErrors(
+                        positionError: response.1 ?? "Unknown error",
+                        cornersError: nil
+                    )
                 }
             }
         } catch {
@@ -2073,25 +1438,11 @@ struct CapturedPhoto: Identifiable {
     var cornersResult: CornersResult?
     var error: String?
     var apiErrors: APIErrors?
-    var debugImages: [String: UIImage]? // New field for debug images
     var manualCorners: [CGPoint]? // Manual corner adjustments
-    var isAdjustingCorners: Bool = false // Track if user is adjusting corners
     var isSendingCornersToAPI: Bool = false // Track if corners are being sent to API
     
     struct PositionResult {
         let fen: String
-        let lichessURL: String?
-        let ascii: String?
-        let legalPosition: Bool
-        let debugImages: [String: UIImage]? // Debug images from API response
-        let debugImagePaths: [String: String]? // File paths to saved debug images
-        let corners: [[Double]]? // The corners used for recognition
-        let processingTime: String? // Timestamp
-        let imageInfo: [String: String]? // Metadata about the uploaded image
-        let debugInfo: [String: String]? // Pipeline step status
-        let description: String? // Chess position description
-        let board2d: [[String]]? // 2D board representation
-        let piecesFound: Int? // Number of pieces found
     }
     
     struct CornersResult {
@@ -2110,37 +1461,7 @@ struct EditingPhotoID: Identifiable, Equatable {
     let id: UUID
 }
 
-// 2D Board View Component
-struct Board2DView: View {
-    let board2d: [[String]]
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("2D Board:")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.secondary)
-            
-            VStack(alignment: .leading, spacing: 1) {
-                ForEach(Array(board2d.enumerated()), id: \.offset) { rowIndex, row in
-                    HStack(spacing: 1) {
-                        ForEach(Array(row.enumerated()), id: \.offset) { colIndex, cell in
-                            Text(cell)
-                                .font(.caption2)
-                                .frame(width: 20, height: 20)
-                                .background((rowIndex + colIndex) % 2 == 0 ? Color.white : Color.gray.opacity(0.3))
-                                .border(Color.black, width: 0.5)
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.green.opacity(0.1))
-            .cornerRadius(4)
-        }
-    }
-}
+
 
 struct CapturedPhotosView: View {
     @ObservedObject var cameraManager: CameraManager
@@ -2161,27 +1482,8 @@ struct CapturedPhotosView: View {
         if let positionResult = photo.positionResult {
             text += "Position Recognition:\n"
             text += "FEN: \(positionResult.fen)\n"
-            text += "Legal Position: \(positionResult.legalPosition ? "Yes" : "No")\n"
-            if let description = positionResult.description, !description.isEmpty {
-                text += "Description: \(description)\n"
-            }
-            if let lichessURL = positionResult.lichessURL {
-                text += "Lichess URL: \(lichessURL)\n"
-            }
-            if let ascii = positionResult.ascii {
-                text += "\nASCII Board:\n\(ascii)\n\n"
-            }
         } else if let error = photo.apiErrors?.positionError {
             text += "Position Recognition Error: \(error)\n\n"
-        }
-        
-        // No corner detection info since we don't use that endpoint anymore
-        
-        // Add debug images information
-        if let debugImages = photo.debugImages, !debugImages.isEmpty {
-            text += "Debug Images:\n"
-            text += "Number of preprocessing steps: \(debugImages.count)\n"
-            text += "Steps: \(debugImages.keys.sorted().joined(separator: ", "))\n\n"
         }
         
         if let error = photo.error {
@@ -2195,6 +1497,71 @@ struct CapturedPhotosView: View {
     }
     
 
+
+        var body: some View {
+        NavigationView {
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    ForEach(cameraManager.capturedPhotos) { photo in
+                        photoCard(photo)
+                            .overlay(
+                                deleteButton(photo)
+                                    .padding(8),
+                                alignment: .topTrailing
+                            )
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("Captured Photos")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingShareSheet) {
+            if let shareSheet = shareSheet {
+                shareSheet
+            }
+        }
+        .alert("Delete Photo", isPresented: $showingDeleteAlert) {
+            Button("Delete", role: .destructive) {
+                if let id = photoToDelete {
+                    cameraManager.deletePhoto(with: id)
+                }
+                photoToDelete = nil
+            }
+            Button("Cancel", role: .cancel) {
+                photoToDelete = nil
+            }
+        } message: {
+            Text("Are you sure you want to delete this photo? This action cannot be undone.")
+        }
+        .fullScreenCover(item: $editingPhotoId) { editingId in
+            if let photo = cameraManager.capturedPhotos.first(where: { $0.id == editingId.id }) {
+                FullScreenCornerEditor(
+                    photo: photo,
+                    corners: $fullscreenCorners,
+                    onDone: {
+                        editingPhotoId = nil
+                    },
+                    onSendToAPI: { corners in
+                        Task {
+                            await cameraManager.sendCorrectedCornersToAPI(for: photo.id, corners: corners)
+                        }
+                        editingPhotoId = nil
+                    },
+                    onSaveGreyedImage: { greyedImage in
+                        saveImageToPhotos(greyedImage)
+                    }
+                )
+            }
+        }
+    }
 
         private func photoCard(_ photo: CapturedPhoto) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -2220,8 +1587,8 @@ struct CapturedPhotosView: View {
                                 // Default to image corners (normalized)
                                 initialCorners = [
                                     CGPoint(x: 0, y: 0),
-                                    CGPoint(x: 1, y: 0),
                                     CGPoint(x: 1, y: 1),
+                                    CGPoint(x: 1, y: 0),
                                     CGPoint(x: 0, y: 1)
                                 ]
                             }
@@ -2328,151 +1695,21 @@ struct CapturedPhotosView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     
-                    // 2D Board
-                    if let board2d = positionResult.board2d {
-                        Board2DView(board2d: board2d)
-                    }
+
                     
-                    // ASCII Board
-                    if let ascii = positionResult.ascii, !ascii.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("ASCII Board:")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                            Text(ascii)
-                                .font(.caption)
-                                .foregroundColor(.primary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.orange.opacity(0.1))
-                                .cornerRadius(4)
-                        }
-                    }
+
                     
-                    // Position Description
-                    if let description = positionResult.description, !description.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Position Description:")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                            
-                            // Check if description contains base64 image data
-                            let isBase64Image = description.contains("data:image") || 
-                                              description.contains("iVBORw0KGgo") ||
-                                              description.contains("zQx1ZWeeT9lJ5ufbaoX+E7BekMASoA2YSVvbko/jsF29SyKUDDAzOcb2dV1sSs7ztH1dFzAbWzf9wX48n4Akx7aS3OLjONrOBDWJpOu6bH/69On++fPM9IPttVYSIIm22Wy3lXQch6TjOP4PJawEpiiI1nwAAAAASUVORK5CYII=") ||
-                                              description.count > 1000
-                            
-                            if isBase64Image {
-                                Text("Contains base64 image data (length: \(description.count))")
-                                    .font(.caption)
-                                    .foregroundColor(.orange)
-                            } else {
-                                Text(description)
-                                    .font(.caption)
-                                    .foregroundColor(.primary)
-                                    .lineLimit(5)
-                            }
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.purple.opacity(0.1))
-                        .cornerRadius(4)
-                    }
+
                     
-                    // Legal Position
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Legal Position:")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                        Text(positionResult.legalPosition ? "Yes" : "No")
-                            .font(.caption)
-                            .foregroundColor(positionResult.legalPosition ? .green : .red)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.yellow.opacity(0.1))
-                    .cornerRadius(4)
+
                     
-                    // Pieces Found
-                    if let piecesFound = positionResult.piecesFound {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Pieces Found:")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                            Text("\(piecesFound)")
-                                .font(.caption)
-                                .foregroundColor(.primary)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.cyan.opacity(0.1))
-                        .cornerRadius(4)
-                    }
+
                     
-                    // Lichess URL
-                    if let lichessUrl = positionResult.lichessURL, !lichessUrl.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Lichess URL:")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                            Text(lichessUrl)
-                                .font(.caption)
-                                .foregroundColor(.blue)
-                                .lineLimit(2)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(4)
-                    }
+
                     
-                    // Processing Time
-                    if let processingTime = positionResult.processingTime {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Processing Time:")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                            Text("\(processingTime)")
-                                .font(.caption)
-                                .foregroundColor(.primary)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(4)
-                    }
+
                     
-                    // Debug Info
-                    if let debugInfo = positionResult.debugInfo, !debugInfo.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Debug Info:")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                            ForEach(Array(debugInfo.keys.sorted()), id: \.self) { key in
-                                if let value = debugInfo[key] {
-                                    HStack {
-                                        Text("\(key):")
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                        Text(value)
-                                            .font(.caption2)
-                                            .foregroundColor(.primary)
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.red.opacity(0.1))
-                        .cornerRadius(4)
-                    }
+
                     
 
                 }
@@ -2533,7 +1770,7 @@ struct CapturedPhotosView: View {
     
 
     
-    private func saveBlurredImageToPhotos(_ image: UIImage) {
+    private func saveImageToPhotos(_ image: UIImage) {
         PHPhotoLibrary.requestAuthorization { status in
             if status == .authorized {
                 PHPhotoLibrary.shared().performChanges({
@@ -2576,12 +1813,7 @@ struct CapturedPhotosView: View {
                 items.append(preprocessedImage)
             }
             
-            // Add debug images if available
-            if let debugImages = photo.debugImages {
-                for (key, image) in debugImages {
-                    items.append(image)
-                }
-            }
+
             
             // Add API results text
             let text = generateShareText(for: photo)
@@ -2612,67 +1844,7 @@ struct CapturedPhotosView: View {
         }
     }
     
-    var body: some View {
-        NavigationView {
-                ScrollView {
-                    VStack(spacing: 20) {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300))], spacing: 20) {
-                            ForEach(cameraManager.capturedPhotos) { photo in
-                                photoCard(photo)
-                                    .overlay(
-                                        deleteButton(photo)
-                                            .padding(8),
-                                        alignment: .topTrailing
-                                    )
-                            }
-                        }
-                        .padding()
-                    }
-                }
-                .navigationTitle("Saved Photos")
-                .navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented: $showingShareSheet) {
-                if let shareSheet = shareSheet {
-                    shareSheet
-                }
-            }
-                        .alert("Delete Photo", isPresented: $showingDeleteAlert) {
-                Button("Cancel", role: .cancel) {
-                    photoToDelete = nil
-                }
-                Button("Delete", role: .destructive) {
-                    if let id = photoToDelete {
-                        cameraManager.deletePhoto(with: id)
-                    }
-                    photoToDelete = nil
-                }
-            } message: {
-                Text("Are you sure you want to delete this photo? This action cannot be undone.")
-            }
-            .fullScreenCover(item: $editingPhotoId) { editingId in
-                if let photo = cameraManager.capturedPhotos.first(where: { $0.id == editingId.id }) {
-                FullScreenCornerEditor(
-                    photo: photo,
-                    corners: $fullscreenCorners,
-                        onDone: {
-                            // Save corners back to photo
-                            if let index = cameraManager.capturedPhotos.firstIndex(where: { $0.id == editingId.id }) {
-                                cameraManager.capturedPhotos[index].manualCorners = fullscreenCorners
-                            }
-                            editingPhotoId = nil
-                        },
-                        onSendToAPI: { correctedCorners in
-                            sendCorrectedCornersToAPI(photo: photo, corners: correctedCorners)
-                    },
-                    onSaveGreyedImage: { image in
-                        saveBlurredImageToPhotos(image)
-                        }
-                    )
-                }
-            }
-        }
 
-    }
 }
 
 #Preview {
@@ -2714,30 +1886,9 @@ class DebugLogger: ObservableObject {
             logMessage += "Error: \(error.localizedDescription)"
         } else if let response = response {
             do {
-                if endpoint == "detect_corners" {
-                    let cornersResponse = try JSONDecoder().decode(CornersResponse.self, from: response)
-                    logMessage += "Corners: \(cornersResponse.corners), Message: \(cornersResponse.message ?? "nil")"
-                } else if endpoint == "recognize_chess_position" {
+                if endpoint == "recognize_chess_position_with_corners" {
                     let positionResponse = try JSONDecoder().decode(ChessPositionResponse.self, from: response)
                     logMessage += "FEN: \(positionResponse.fen), Legal: \(positionResponse.hasChessBoard)"
-                    
-                    // Log debug images information
-                    if let debugImages = positionResponse.debug_images {
-                        logMessage += ", Debug Images: \(debugImages.count) images (\(debugImages.keys.sorted().joined(separator: ", ")))"
-                    }
-                } else if endpoint == "recognize_chess_position_with_cursor_description" {
-                    let positionResponse = try JSONDecoder().decode(ChessPositionDescriptionResponse.self, from: response)
-                    logMessage += "FEN: \(positionResponse.fen), Legal: \(positionResponse.hasChessBoard)"
-                    
-                    // Log description if available
-                    if let description = positionResponse.description {
-                        logMessage += ", Description: \(description)"
-                    }
-                    
-                    // Log debug images information
-                    if let debugImages = positionResponse.debug_images {
-                        logMessage += ", Debug Images: \(debugImages.count) images (\(debugImages.keys.sorted().joined(separator: ", ")))"
-                    }
                 } else {
                     if let responseString = String(data: response, encoding: .utf8) {
                         logMessage += responseString
@@ -3171,7 +2322,7 @@ struct InteractiveCornerOverlayView: View {
                                 Button(action: {
                                     // Generate and save greyed-out image
                                     if let photo = cameraManager.capturedPhotos.first(where: { photo in
-                                        photo.debugImages?.keys.contains("corners") == true
+                                        false
                                     }) {
                                         let greyedImage = photo.image.createBlurredImageWithChessboardFocus(corners: corners)
                                         if let greyedImage = greyedImage {
@@ -3750,11 +2901,6 @@ struct FullScreenCornerDotView: View {
                 .position(x: transformedCorner.x, y: transformedCorner.y - 36)
         }
     }
-}
-
-// Minimal fallback struct for just FEN
-struct MinimalFENResponse: Codable {
-    let fen: String
 }
 
 // Helper for chessboard corner labels

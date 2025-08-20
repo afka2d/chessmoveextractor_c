@@ -4,34 +4,57 @@ struct ChessboardView: View {
     let fen: String
     @State private var boardState: [[ChessPiece?]] = Array(repeating: Array(repeating: nil, count: 8), count: 8)
     @State private var selectedSquare: (row: Int, col: Int)? = nil
+    @State private var isEditMode: Bool = false
+    @State private var selectedPieceType: String? = nil
+    @State private var selectedPieceColor: Bool = true // true = white, false = black
     
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                // Left column - rank numbers (8-1)
-                VStack(spacing: 0) {
-                    ForEach(0..<8, id: \.self) { row in
-                        Text("\(8 - row)")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.secondary)
-                            .frame(width: 20, height: 36)
-                    }
-                }
-                
-                // Main chessboard
-                chessboardView
+            // Top toolbar - piece selection (only visible in edit mode)
+            if isEditMode {
+                pieceSelectionToolbar
             }
             
-            // Bottom row - file letters (a-h)
-            HStack(spacing: 0) {
-                Spacer()
-                    .frame(width: 20) // Left margin
-                ForEach(0..<8, id: \.self) { col in
-                    Text(String(Character(UnicodeScalar(97 + col)!))) // 'a' = 97
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .frame(width: 36, height: 20)
+            // Main chessboard
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    // Left column - rank numbers (8-1)
+                    VStack(spacing: 0) {
+                        ForEach(0..<8, id: \.self) { row in
+                            Text("\(8 - row)")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.secondary)
+                                .frame(width: 20, height: 36)
+                        }
+                    }
+                    
+                    // Main chessboard
+                    chessboardView
                 }
+                
+                // Bottom row - file letters (a-h)
+                HStack(spacing: 0) {
+                    Spacer()
+                        .frame(width: 20) // Left margin
+                    ForEach(0..<8, id: \.self) { col in
+                        Text(String(Character(UnicodeScalar(97 + col)!))) // 'a' = 97
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .frame(width: 36, height: 20)
+                    }
+                }
+            }
+            
+            // Bottom toolbar - piece selection (only visible in edit mode)
+            if isEditMode {
+                pieceSelectionToolbar
+            }
+        }
+        .onTapGesture(count: 2) {
+            isEditMode.toggle()
+            if !isEditMode {
+                selectedPieceType = nil
+                selectedSquare = nil
             }
         }
         .onAppear {
@@ -89,17 +112,33 @@ struct ChessboardView: View {
     }
     
     private func handleSquareTap(row: Int, col: Int) {
-        if let selected = selectedSquare {
-            // If a square is already selected, try to move piece
-            if selected.row != row || selected.col != col {
-                // TODO: Implement piece movement logic
-                print("Move piece from (\(selected.row), \(selected.col)) to (\(row), \(col))")
+        if isEditMode {
+            // Edit mode: place or remove pieces
+            if let pieceType = selectedPieceType {
+                if pieceType == "delete" {
+                    // Delete piece
+                    boardState[row][col] = nil
+                } else {
+                    // Place selected piece
+                    boardState[row][col] = ChessPiece(type: pieceType, isWhite: selectedPieceColor)
+                }
+            } else {
+                // Remove piece if no piece type selected
+                boardState[row][col] = nil
             }
-            selectedSquare = nil
         } else {
-            // Select this square if it has a piece
-            if boardState[row][col] != nil {
-                selectedSquare = (row, col)
+            // Normal mode: select squares for movement
+            if let selected = selectedSquare {
+                // If a square is already selected, try to move piece
+                if selected.row != row || selected.col != col {
+                    // TODO: Implement piece movement logic
+                }
+                selectedSquare = nil
+            } else {
+                // Select this square if it has a piece
+                if boardState[row][col] != nil {
+                    selectedSquare = (row, col)
+                }
             }
         }
     }
@@ -133,9 +172,67 @@ struct ChessboardView: View {
             }
         }
     }
+    
+    private var pieceSelectionToolbar: some View {
+        HStack(spacing: 8) {
+            // Pointer/Selection tool
+            Button(action: {
+                selectedPieceType = nil
+            }) {
+                Image(systemName: "hand.point.up")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(width: 32, height: 32)
+                    .background(selectedPieceType == nil ? Color.green : Color.gray)
+                    .cornerRadius(6)
+            }
+            
+            // Piece selection buttons
+            ForEach(["k", "q", "r", "b", "n", "p"], id: \.self) { pieceType in
+                Button(action: {
+                    selectedPieceType = pieceType
+                }) {
+                    Text(ChessPiece(type: pieceType, isWhite: true).symbol)
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(width: 32, height: 32)
+                        .background(selectedPieceType == pieceType ? Color.blue : Color.gray)
+                        .cornerRadius(6)
+                }
+            }
+            
+            // Color toggle
+            Button(action: {
+                selectedPieceColor.toggle()
+            }) {
+                Text(selectedPieceColor ? "♔" : "♚")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Color.orange)
+                    .cornerRadius(6)
+            }
+            
+            // Delete/Clear tool
+            Button(action: {
+                selectedPieceType = "delete"
+            }) {
+                Image(systemName: "trash")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(width: 32, height: 32)
+                    .background(selectedPieceType == "delete" ? Color.red : Color.gray)
+                    .cornerRadius(6)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.gray.opacity(0.8))
+        .cornerRadius(8)
+    }
 }
 
-struct ChessPiece {
+struct ChessPiece: Equatable {
     let type: String
     let isWhite: Bool
     
@@ -144,6 +241,10 @@ struct ChessPiece {
             "k": "♔", "q": "♕", "r": "♖", "b": "♗", "n": "♘", "p": "♙"
         ]
         return pieceSymbols[type] ?? "?"
+    }
+    
+    static func == (lhs: ChessPiece, rhs: ChessPiece) -> Bool {
+        return lhs.type == rhs.type && lhs.isWhite == rhs.isWhite
     }
 }
 

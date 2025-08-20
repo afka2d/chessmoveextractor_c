@@ -16,7 +16,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "500"
             endingLineNumber = "500"
-            landmarkName = "setupPlayer(with:)"
+            landmarkName = "updateCurrentPosition(time:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -32,7 +32,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "513"
             endingLineNumber = "513"
-            landmarkName = "setupPlayer(with:)"
+            landmarkName = "updateCurrentPosition(time:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
