@@ -51,6 +51,9 @@ struct ChessboardView: View {
             }
         }
         .onTapGesture(count: 2) {
+            openInLichess()
+        }
+        .onLongPressGesture {
             isEditMode.toggle()
             if !isEditMode {
                 selectedPieceType = nil
@@ -170,6 +173,14 @@ struct ChessboardView: View {
                     fileIndex += 1
                 }
             }
+        }
+    }
+    
+    private func openInLichess() {
+        let lichessURL = "https://lichess.org/editor/\(fen.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? fen)"
+        
+        if let url = URL(string: lichessURL) {
+            UIApplication.shared.open(url)
         }
     }
     

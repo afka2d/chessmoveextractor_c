@@ -2422,10 +2422,11 @@ struct InteractiveCornerDotView: View {
             // Corner dot
             Circle()
                 .fill(selectedCornerIndex == index ? Color.yellow : (isEditing ? Color.blue : Color.red))
+                .opacity(0.6)
                 .frame(width: isEditing ? 20 : 12, height: isEditing ? 20 : 12)
                 .overlay(
                     Circle()
-                        .stroke(Color.white, lineWidth: 2)
+                        .stroke(Color.white.opacity(0.6), lineWidth: 2)
                 )
                 .position(transformedCorner)
                 .gesture(
