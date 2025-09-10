@@ -1013,7 +1013,7 @@ extension String {
 
 
 class LocalChessService {
-    private let recognizeURL = "https://api.chesspositionscanner.store/recognize_chess_position_with_corners"
+    private let recognizeURL = "http://192.168.0.15:8000/recognize_chess_position_with_corners"
     private let debugLogger = DebugLogger()
     
     func recognizePositionWithCorners(imageData: Data, corners: [CGPoint]) async throws -> (ChessPositionResponse?, String?, [String: UIImage]?) {
@@ -1477,23 +1477,12 @@ struct CapturedPhotosView: View {
     @State private var fullscreenCorners: [CGPoint] = []
     
     private func generateShareText(for photo: CapturedPhoto) -> String {
-        var text = "Chess Position Analysis\n\n"
-        
         if let positionResult = photo.positionResult {
-            text += "Position Recognition:\n"
-            text += "FEN: \(positionResult.fen)\n"
-        } else if let error = photo.apiErrors?.positionError {
-            text += "Position Recognition Error: \(error)\n\n"
+            let lichessURL = "https://lichess.org/editor/\(positionResult.fen.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? positionResult.fen)"
+            return "View this position in Lichess: \(lichessURL)"
+        } else {
+            return "Chess position analysis failed - no position detected"
         }
-        
-        if let error = photo.error {
-            text += "General Error: \(error)\n"
-        }
-        
-        let dateFormatter = DateFormatter()
-        dateFormatter.timeStyle = .short
-        text += "\nCaptured at: \(dateFormatter.string(from: photo.timestamp))"
-        return text
     }
     
 
@@ -1515,13 +1504,6 @@ struct CapturedPhotosView: View {
             }
             .navigationTitle("Captured Photos")
             .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
         }
         .sheet(isPresented: $showingShareSheet) {
             if let shareSheet = shareSheet {
@@ -1692,8 +1674,6 @@ struct CapturedPhotosView: View {
                             .frame(height: 300) // Reduced height for better fit
                             .cornerRadius(8)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
                     
 
                     
@@ -1805,17 +1785,10 @@ struct CapturedPhotosView: View {
         Button(action: {
             var items: [Any] = []
             
-            // Add original photo
+            // Add original photo only
             items.append(photo.image)
             
-            // Add preprocessed photo if available
-            if let preprocessedImage = photo.preprocessedImage {
-                items.append(preprocessedImage)
-            }
-            
-
-            
-            // Add API results text
+            // Add Lichess link text
             let text = generateShareText(for: photo)
             items.append(text)
             

@@ -105,9 +105,9 @@ struct ChessboardView: View {
                     // Chess.com/Lichess-style piece design
                     Text(piece.symbol)
                         .font(.system(size: 26, weight: .black))
-                        .foregroundColor(piece.isWhite ? Color(red: 0.1, green: 0.1, blue: 0.1) : Color(red: 0.9, green: 0.9, blue: 0.9))
-                        .shadow(color: piece.isWhite ? Color.white.opacity(0.9) : Color.black.opacity(0.7), radius: 0.5, x: 0, y: 0)
-                        .shadow(color: piece.isWhite ? Color.black.opacity(0.3) : Color.white.opacity(0.3), radius: 1, x: 0, y: 0)
+                        .foregroundColor(piece.isWhite ? Color(red: 0.9, green: 0.9, blue: 0.9) : Color(red: 0.1, green: 0.1, blue: 0.1))
+                        .shadow(color: piece.isWhite ? Color.black.opacity(0.7) : Color.white.opacity(0.9), radius: 0.5, x: 0, y: 0)
+                        .shadow(color: piece.isWhite ? Color.white.opacity(0.3) : Color.black.opacity(0.3), radius: 1, x: 0, y: 0)
                 }
             }
         }
