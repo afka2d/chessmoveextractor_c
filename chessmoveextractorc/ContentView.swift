@@ -1013,7 +1013,7 @@ extension String {
 
 
 class LocalChessService {
-    private let recognizeURL = "http://192.168.0.15:8000/recognize_chess_position_with_corners"
+    private let recognizeURL = "https://api.chesspositionscanner.store/recognize_chess_position_with_corners"
     private let debugLogger = DebugLogger()
     
     func recognizePositionWithCorners(imageData: Data, corners: [CGPoint]) async throws -> (ChessPositionResponse?, String?, [String: UIImage]?) {
