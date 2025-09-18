@@ -37,6 +37,10 @@ struct Corner: Codable {
     let y: Double
 }
 
+struct DetectCornersResponse: Codable {
+    let corners: [[Double]]
+}
+
 struct RecordedGame: Identifiable {
     let id: String
     let fileName: String
@@ -1014,6 +1018,7 @@ extension String {
 
 class LocalChessService {
     private let recognizeURL = "https://api.chesspositionscanner.store/recognize_chess_position_with_corners"
+    private let detectCornersURL = "http://192.168.0.15:8002/detect_corners"
     private let debugLogger = DebugLogger()
     
     func recognizePositionWithCorners(imageData: Data, corners: [CGPoint]) async throws -> (ChessPositionResponse?, String?, [String: UIImage]?) {
@@ -1131,6 +1136,64 @@ class LocalChessService {
         return (body, boundary)
     }
     
+    func detectCorners(imageData: Data) async throws -> [CGPoint] {
+        guard let url = URL(string: detectCornersURL) else {
+            debugLogger.log("Invalid URL for detect_corners")
+                throw URLError(.badURL)
+            }
+        
+        let boundary = UUID().uuidString
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        
+        let body = NSMutableData()
+        
+        // Add image data
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"image.jpg\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append(imageData)
+        body.append("\r\n".data(using: .utf8)!)
+        
+        // Close boundary
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        
+        request.httpBody = body as Data
+        
+        debugLogger.log("Making detect_corners API call with \(imageData.count) bytes")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        if let httpResponse = response as? HTTPURLResponse {
+            debugLogger.log("Detect corners API Response Status Code: \(httpResponse.statusCode)")
+            
+            if httpResponse.statusCode == 200 {
+                // Parse the corners response
+                if let cornersResponse = try? JSONDecoder().decode(DetectCornersResponse.self, from: data) {
+                    debugLogger.log("Successfully detected corners: \(cornersResponse.corners)")
+                    // Convert pixel coordinates to normalized coordinates (0-1)
+                    // Assuming the API returns pixel coordinates, we need image dimensions
+                    let image = UIImage(data: imageData)
+                    let imageWidth = image?.size.width ?? 1080.0
+                    let imageHeight = image?.size.height ?? 1920.0
+                    
+                    return cornersResponse.corners.map { cornerArray in
+                        CGPoint(x: cornerArray[0] / imageWidth, y: cornerArray[1] / imageHeight)
+                    }
+                                } else {
+                    debugLogger.log("Failed to decode corners response")
+                    throw URLError(.cannotParseResponse)
+                }
+            } else {
+                let errorString = String(data: data, encoding: .utf8) ?? "Unknown error"
+                debugLogger.log("Detect corners API Error: \(errorString)")
+                throw URLError(.badServerResponse)
+            }
+        }
+        
+        throw URLError(.badServerResponse)
+    }
 
 }
 
@@ -1288,6 +1351,34 @@ class CameraManager: NSObject, ObservableObject {
     
     func deletePhoto(with id: UUID) {
         capturedPhotos.removeAll { $0.id == id }
+    }
+    
+    func detectInitialCorners(for photo: CapturedPhoto) async -> [CGPoint] {
+        guard let imageData = photo.image.jpegData(compressionQuality: 0.8) else {
+            print("❌ Failed to convert image to JPEG data")
+            // Return default corners if image conversion fails
+            return [
+                CGPoint(x: 0, y: 0),
+                CGPoint(x: 1, y: 0),
+                CGPoint(x: 1, y: 1),
+                CGPoint(x: 0, y: 1)
+            ]
+        }
+        
+        do {
+            let detectedCorners = try await localChessService.detectCorners(imageData: imageData)
+            print("🎯 Detected initial corners: \(detectedCorners)")
+            return detectedCorners
+        } catch {
+            print("❌ Failed to detect corners: \(error.localizedDescription)")
+            // Return default corners if detection fails
+            return [
+                CGPoint(x: 0, y: 0),
+                CGPoint(x: 1, y: 0),
+                CGPoint(x: 1, y: 1),
+                CGPoint(x: 0, y: 1)
+            ]
+        }
     }
     
     func sendCorrectedCornersToAPI(for photoId: UUID, corners: [CGPoint]) async {
@@ -1475,14 +1566,25 @@ struct CapturedPhotosView: View {
     @State private var imageSavedMessage = ""
     @State private var editingPhotoId: EditingPhotoID? = nil
     @State private var fullscreenCorners: [CGPoint] = []
+    @State private var isDetectingCorners = false
     
     private func generateShareText(for photo: CapturedPhoto) -> String {
+        var text = ""
+        
         if let positionResult = photo.positionResult {
             let lichessURL = "https://lichess.org/editor/\(positionResult.fen.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? positionResult.fen)"
-            return "View this position in Lichess: \(lichessURL)"
+            text += "♟️ Chess Position Analysis\n\n"
+            text += "📋 View this position in Lichess:\n\(lichessURL)\n\n"
         } else {
-            return "Chess position analysis failed - no position detected"
+            text += "♟️ Chess Position Analysis\n\n"
+            text += "❌ Position analysis failed - no position detected\n\n"
         }
+        
+        text += "📱 Download AI Chess Imager:\n"
+        text += "https://apps.apple.com/us/app/ai-chess-imager/id6745581414\n\n"
+        text += "Analyze chess positions from photos with AI!"
+        
+        return text
     }
     
 
@@ -1528,14 +1630,17 @@ struct CapturedPhotosView: View {
                 FullScreenCornerEditor(
                     photo: photo,
                     corners: $fullscreenCorners,
+                    isDetectingCorners: isDetectingCorners,
                     onDone: {
                         editingPhotoId = nil
+                        isDetectingCorners = false
                     },
                     onSendToAPI: { corners in
                         Task {
                             await cameraManager.sendCorrectedCornersToAPI(for: photo.id, corners: corners)
                         }
                         editingPhotoId = nil
+                        isDetectingCorners = false
                     },
                     onSaveGreyedImage: { greyedImage in
                         saveImageToPhotos(greyedImage)
@@ -1559,27 +1664,61 @@ struct CapturedPhotosView: View {
                 .scaledToFit()
                 .cornerRadius(8)
                         .onTapGesture(count: 2) {
-                            // Open full screen editor for this photo
-                            editingPhotoId = EditingPhotoID(id: photo.id)
-                            // Use manual corners if set, else default to image corners
-                            let initialCorners: [CGPoint]
-                            if let manual = photo.manualCorners, manual.count == 4 {
-                                initialCorners = manual
-                            } else {
-                                // Default to image corners (normalized)
-                                initialCorners = [
+                            print("🎯 Double-tap detected - starting corner detection flow")
+                            
+                            // Initialize corners with detected corners or manual corners
+                            Task {
+                                await MainActor.run {
+                                    print("🔄 Setting detecting state to true")
+                                    isDetectingCorners = true
+                                    // Initialize with default corners first
+                                    fullscreenCorners = [
                                     CGPoint(x: 0, y: 0),
-                                    CGPoint(x: 1, y: 1),
                                     CGPoint(x: 1, y: 0),
+                                    CGPoint(x: 1, y: 1),
                                     CGPoint(x: 0, y: 1)
                                 ]
+                                    print("🔄 Set default corners: \(fullscreenCorners)")
+                                    // Open the editor immediately with default corners
+                                    editingPhotoId = EditingPhotoID(id: photo.id)
+                                    print("🔄 Opened corner editor")
+                                }
+                                
+                                let detectedCorners: [CGPoint]
+                                // Always detect corners automatically (ignore existing manual corners for fresh detection)
+                                print("🔄 Calling detectInitialCorners API...")
+                                detectedCorners = await cameraManager.detectInitialCorners(for: photo)
+                                print("🔄 Received detected corners: \(detectedCorners)")
+                                
+                                await MainActor.run {
+                                    print("🔄 Updating UI with detected corners")
+                                    // Update corners with detected ones
+                                    fullscreenCorners = detectedCorners
+                                    isDetectingCorners = false
+                                    print("🔄 Corner detection complete - UI updated")
+                                }
                             }
-                            fullscreenCorners = initialCorners
                         }
                     
                     // Show corner overlay if manual corners are available
                     if let manualCorners = photo.manualCorners, manualCorners.count == 4 {
                         CornerOverlayView(corners: manualCorners, imageSize: photo.image.size)
+                    }
+                    
+                    // Show loading indicator when detecting corners
+                    if isDetectingCorners {
+                        Rectangle()
+                            .fill(Color.black.opacity(0.6))
+                            .cornerRadius(8)
+                        
+                        VStack(spacing: 8) {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(1.2)
+                            Text("Detecting corners...")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                        }
                     }
                 }
                 .frame(height: 200)
@@ -2664,6 +2803,7 @@ struct DebugImageCornerDotView: View {
 struct FullScreenCornerEditor: View {
     let photo: CapturedPhoto
     @Binding var corners: [CGPoint]
+    let isDetectingCorners: Bool
     let onDone: () -> Void
     let onSendToAPI: ([CGPoint]) -> Void
     let onSaveGreyedImage: (UIImage) -> Void
@@ -2732,6 +2872,21 @@ struct FullScreenCornerEditor: View {
                             }
                         }
                     }
+                    // Loading overlay for corner detection
+                    if isDetectingCorners {
+                        Rectangle()
+                            .fill(Color.black.opacity(0.7))
+                        
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(1.5)
+                            Text("Detecting corners...")
+                                .font(.title3)
+                                .foregroundColor(.white)
+                                .fontWeight(.medium)
+                        }
+                    }
                 }
                 .aspectRatio(photo.image.size, contentMode: .fit)
                 .padding()
@@ -2793,6 +2948,17 @@ struct FullScreenCornerEditor: View {
                 }
                         .padding(.bottom, 32)
             }
+        }
+        .onAppear {
+            print("🖼️ FullScreenCornerEditor appeared")
+            print("🖼️ Initial corners: \(corners)")
+            print("🖼️ Is detecting corners: \(isDetectingCorners)")
+        }
+        .onChange(of: corners) { _, newCorners in
+            print("🖼️ Corners changed to: \(newCorners)")
+        }
+        .onChange(of: isDetectingCorners) { _, newValue in
+            print("🖼️ isDetectingCorners changed to: \(newValue)")
         }
     }
 }
