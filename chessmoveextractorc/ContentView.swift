@@ -63,7 +63,7 @@ struct ContentView: View {
     
     var body: some View {
         TabView(selection: $selectedTab) {
-            CameraView(cameraManager: cameraManager)
+            CameraView(cameraManager: cameraManager, selectedTab: $selectedTab)
                 .tabItem {
                     Label("Camera", systemImage: "camera")
                 }
@@ -96,6 +96,7 @@ struct ContentView: View {
 
 struct CameraView: View {
     @ObservedObject var cameraManager: CameraManager
+    @Binding var selectedTab: Int
     
     var body: some View {
         ZStack {
@@ -133,6 +134,7 @@ struct CameraView: View {
         }
         .onAppear {
             cameraManager.startSession()
+            cameraManager.selectedTabBinding = $selectedTab
         }
         .onDisappear {
             cameraManager.stopSession()
@@ -1208,6 +1210,7 @@ class CameraManager: NSObject, ObservableObject {
     @Published var lastAPIError: String?
     @Published var lastAPIStatus: String?
     @Published var capturedPhotos: [CapturedPhoto] = []
+    var selectedTabBinding: Binding<Int>?
     
     let session = AVCaptureSession()
     private var videoOutput: AVCaptureVideoDataOutput?
@@ -1498,6 +1501,12 @@ extension CameraManager: AVCapturePhotoCaptureDelegate {
                         self.capturedPhotos[index].isProcessing = false
                     
                     print("📸 Photo captured and stored. User can now manually adjust corners and press Analyze Position.")
+                    
+                    // Automatically switch to Photos tab
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        self.selectedTabBinding?.wrappedValue = 1
+                        print("🔄 Automatically switched to Photos tab")
+                    }
                 }
             }
         }
@@ -1567,6 +1576,7 @@ struct CapturedPhotosView: View {
     @State private var editingPhotoId: EditingPhotoID? = nil
     @State private var fullscreenCorners: [CGPoint] = []
     @State private var isDetectingCorners = false
+    @State private var lastPhotoCount = 0
     
     private func generateShareText(for photo: CapturedPhoto) -> String {
         var text = ""
@@ -1647,6 +1657,45 @@ struct CapturedPhotosView: View {
                     }
                 )
             }
+        }
+        .onAppear {
+            lastPhotoCount = cameraManager.capturedPhotos.count
+        }
+        .onChange(of: cameraManager.capturedPhotos.count) { _, newCount in
+            // If a new photo was added, automatically open corner selector
+            if newCount > lastPhotoCount && newCount > 0 {
+                let latestPhoto = cameraManager.capturedPhotos.last!
+                print("🎯 New photo detected - automatically opening corner selector")
+                
+                // Automatically open corner selector for the latest photo
+                Task {
+                    await MainActor.run {
+                        isDetectingCorners = true
+                        // Initialize with default corners first
+                        fullscreenCorners = [
+                            CGPoint(x: 0, y: 0),
+                            CGPoint(x: 1, y: 0),
+                            CGPoint(x: 1, y: 1),
+                            CGPoint(x: 0, y: 1)
+                        ]
+                        // Open the editor immediately with default corners
+                        editingPhotoId = EditingPhotoID(id: latestPhoto.id)
+                    }
+                    
+                    // Detect corners automatically
+                    print("🔄 Auto-detecting corners for new photo...")
+                    let detectedCorners = await cameraManager.detectInitialCorners(for: latestPhoto)
+                    print("🔄 Auto-detected corners: \(detectedCorners)")
+                    
+                    await MainActor.run {
+                        // Update corners with detected ones
+                        fullscreenCorners = detectedCorners
+                        isDetectingCorners = false
+                        print("🔄 Auto corner detection complete - UI updated")
+                    }
+                }
+            }
+            lastPhotoCount = newCount
         }
     }
 
