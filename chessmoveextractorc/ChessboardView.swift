@@ -15,35 +15,8 @@ struct ChessboardView: View {
                 pieceSelectionToolbar
             }
             
-            // Main chessboard
-            VStack(spacing: 0) {
-                HStack(spacing: 0) {
-                    // Left column - rank numbers (8-1) - Lichess brown theme
-                    VStack(spacing: 0) {
-                        ForEach(0..<8, id: \.self) { row in
-                            Text("\(8 - row)")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(Color(red: 0.70, green: 0.53, blue: 0.39))
-                                .frame(width: 20, height: 36)
-                        }
-                    }
-                    
-                    // Main chessboard
-                    chessboardView
-                }
-                
-                // Bottom row - file letters (a-h) - Lichess brown theme
-                HStack(spacing: 0) {
-                    Spacer()
-                        .frame(width: 20) // Left margin
-                    ForEach(0..<8, id: \.self) { col in
-                        Text(String(Character(UnicodeScalar(97 + col)!))) // 'a' = 97
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(Color(red: 0.70, green: 0.53, blue: 0.39))
-                            .frame(width: 36, height: 20)
-                    }
-                }
-            }
+            // Main chessboard (with coordinates inside like Lichess)
+            chessboardView
             
             // Bottom toolbar - piece selection (only visible in edit mode)
             if isEditMode {
@@ -78,12 +51,7 @@ struct ChessboardView: View {
                 }
             }
         }
-        .overlay(
-            RoundedRectangle(cornerRadius: 4)
-                .stroke(Color(red: 0.70, green: 0.53, blue: 0.39).opacity(0.4), lineWidth: 2)
-        )
-        .cornerRadius(4)
-        .shadow(color: Color.black.opacity(0.2), radius: 6, x: 0, y: 3)
+        .shadow(color: Color.black.opacity(0.1), radius: 3, x: 0, y: 2)
     }
     
     private func chessSquare(row: Int, col: Int) -> some View {
@@ -94,7 +62,7 @@ struct ChessboardView: View {
             handleSquareTap(row: row, col: col)
         }) {
             ZStack {
-                // Exact Lichess brown theme colors from screenshot
+                // Exact Lichess brown theme colors
                 Rectangle()
                     .fill(isWhiteSquare ? 
                           Color(red: 0.93, green: 0.89, blue: 0.78) :  // Light squares: warm cream
@@ -107,12 +75,41 @@ struct ChessboardView: View {
                                    lineWidth: 3)
                     )
                 
+                // Coordinates (always behind pieces) - Lichess exact positioning
+                ZStack(alignment: .topTrailing) {
+                    // Rank numbers on RIGHT edge (h-file only)
+                    if col == 7 {
+                        Text("\(8 - row)")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(isWhiteSquare ? 
+                                           Color(red: 0.70, green: 0.53, blue: 0.39).opacity(0.8) : 
+                                           Color(red: 0.93, green: 0.89, blue: 0.78).opacity(0.8))
+                            .padding(.trailing, 2)
+                            .padding(.top, 1)
+                    }
+                }
+                .frame(width: 36, height: 36, alignment: .topTrailing)
+                
+                ZStack(alignment: .bottomLeading) {
+                    // File letters on bottom LEFT (1st rank only)
+                    if row == 7 {
+                        Text(String(Character(UnicodeScalar(97 + col)!)))
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(isWhiteSquare ? 
+                                           Color(red: 0.70, green: 0.53, blue: 0.39).opacity(0.8) : 
+                                           Color(red: 0.93, green: 0.89, blue: 0.78).opacity(0.8))
+                            .padding(.leading, 2)
+                            .padding(.bottom, 1)
+                    }
+                }
+                .frame(width: 36, height: 36, alignment: .bottomLeading)
+                
+                // Chess piece (always on top, centered)
                 if let piece = piece {
-                    // Exact Lichess SVG pieces
                     Image(piece.imageName)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 30, height: 30)
                 }
             }
         }
