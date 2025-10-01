@@ -18,12 +18,12 @@ struct ChessboardView: View {
             // Main chessboard
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
-                    // Left column - rank numbers (8-1)
+                    // Left column - rank numbers (8-1) - Lichess brown theme
                     VStack(spacing: 0) {
                         ForEach(0..<8, id: \.self) { row in
                             Text("\(8 - row)")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.secondary)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(Color(red: 0.70, green: 0.53, blue: 0.39))
                                 .frame(width: 20, height: 36)
                         }
                     }
@@ -32,14 +32,14 @@ struct ChessboardView: View {
                     chessboardView
                 }
                 
-                // Bottom row - file letters (a-h)
+                // Bottom row - file letters (a-h) - Lichess brown theme
                 HStack(spacing: 0) {
                     Spacer()
                         .frame(width: 20) // Left margin
                     ForEach(0..<8, id: \.self) { col in
                         Text(String(Character(UnicodeScalar(97 + col)!))) // 'a' = 97
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(Color(red: 0.70, green: 0.53, blue: 0.39))
                             .frame(width: 36, height: 20)
                     }
                 }
@@ -79,10 +79,11 @@ struct ChessboardView: View {
             }
         }
         .overlay(
-            RoundedRectangle(cornerRadius: 0)
-                .stroke(Color.gray.opacity(0.4), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(Color(red: 0.70, green: 0.53, blue: 0.39).opacity(0.4), lineWidth: 2)
         )
-        .shadow(radius: 2)
+        .cornerRadius(4)
+        .shadow(color: Color.black.opacity(0.2), radius: 6, x: 0, y: 3)
     }
     
     private func chessSquare(row: Int, col: Int) -> some View {
@@ -93,21 +94,25 @@ struct ChessboardView: View {
             handleSquareTap(row: row, col: col)
         }) {
             ZStack {
+                // Exact Lichess brown theme colors from screenshot
                 Rectangle()
-                    .fill(isWhiteSquare ? Color(red: 0.96, green: 0.93, blue: 0.85) : Color(red: 0.4, green: 0.6, blue: 0.4))
+                    .fill(isWhiteSquare ? 
+                          Color(red: 0.93, green: 0.89, blue: 0.78) :  // Light squares: warm cream
+                          Color(red: 0.70, green: 0.53, blue: 0.39))   // Dark squares: warm brown
                     .frame(width: 36, height: 36)
                     .overlay(
                         Rectangle()
-                            .stroke(selectedSquare?.row == row && selectedSquare?.col == col ? Color.blue : Color.clear, lineWidth: 2)
+                            .stroke(selectedSquare?.row == row && selectedSquare?.col == col ? 
+                                   Color(red: 0.95, green: 0.77, blue: 0.20).opacity(0.8) : Color.clear, 
+                                   lineWidth: 3)
                     )
                 
                 if let piece = piece {
-                    // Chess.com/Lichess-style piece design
-                    Text(piece.symbol)
-                        .font(.system(size: 26, weight: .black))
-                        .foregroundColor(piece.isWhite ? Color(red: 0.9, green: 0.9, blue: 0.9) : Color(red: 0.1, green: 0.1, blue: 0.1))
-                        .shadow(color: piece.isWhite ? Color.black.opacity(0.7) : Color.white.opacity(0.9), radius: 0.5, x: 0, y: 0)
-                        .shadow(color: piece.isWhite ? Color.white.opacity(0.3) : Color.black.opacity(0.3), radius: 1, x: 0, y: 0)
+                    // Exact Lichess SVG pieces
+                    Image(piece.imageName)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 32, height: 32)
                 }
             }
         }
@@ -252,6 +257,12 @@ struct ChessPiece: Equatable {
             "k": "♔", "q": "♕", "r": "♖", "b": "♗", "n": "♘", "p": "♙"
         ]
         return pieceSymbols[type] ?? "?"
+    }
+    
+    var imageName: String {
+        let color = isWhite ? "w" : "b"
+        let piece = type.uppercased()
+        return "\(color)\(piece)"
     }
     
     static func == (lhs: ChessPiece, rhs: ChessPiece) -> Bool {
