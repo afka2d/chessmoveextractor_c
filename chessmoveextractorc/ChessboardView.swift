@@ -558,18 +558,18 @@ struct ChessPiece: Equatable {
     }
 }
 
-// Lichess Cloud Evaluation Response
-struct LichessCloudEval: Codable {
-    let fen: String?
-    let knodes: Int?
+// Chess-API.com Evaluation Response
+struct ChessAPIEval: Codable {
+    let type: String?  // "move", "bestmove", "error"
+    let error: String?
+    let eval: Double?
+    let move: String?
+    let mate: Int?
     let depth: Int?
-    let pvs: [PVLine]?
-    
-    struct PVLine: Codable {
-        let moves: String
-        let cp: Int?  // centipawns
-        let mate: Int?  // mate in X moves
-    }
+    let continuationArr: [String]?
+    let text: String?
+    let winChance: Double?
+    let centipawns: String?
 }
 
 // Fullscreen Lichess-style Editor
@@ -583,7 +583,7 @@ struct LichessEditorView: View {
     @State private var selectedPieceType: String? = nil
     @State private var selectedPieceColor: Bool = true
     @State private var dragOffset: CGFloat = 0
-    @State private var evaluation: LichessCloudEval? = nil
+    @State private var evaluation: ChessAPIEval? = nil
     @State private var isLoadingEval: Bool = false
     
     var body: some View {
@@ -619,9 +619,9 @@ struct LichessEditorView: View {
                 }
                 .padding(.horizontal, 8)
                 
-                // Best moves display
-                if let eval = evaluation, let pvs = eval.pvs, !pvs.isEmpty {
-                    bestMovesPanel
+                // Best move display
+                if let eval = evaluation, let move = eval.move {
+                    bestMoveDisplay
                         .padding(.horizontal, 16)
                         .padding(.top, 12)
                 }
@@ -864,6 +864,9 @@ struct LichessEditorView: View {
         } else {
             boardState[row][col] = nil
         }
+        
+        // Trigger evaluation update after changing position
+        fetchCloudEvaluation()
     }
     
     private func setStartPosition() {
@@ -871,10 +874,12 @@ struct LichessEditorView: View {
         parseFEN(startFEN)
         sideToMove = true
         castlingRights = ["K", "Q", "k", "q"]
+        fetchCloudEvaluation()
     }
     
     private func clearBoard() {
         boardState = Array(repeating: Array(repeating: nil, count: 8), count: 8)
+        evaluation = nil  // Clear evaluation for empty board
     }
     
     private var evaluationBar: some View {
@@ -893,8 +898,8 @@ struct LichessEditorView: View {
                     .frame(height: height * whiteAdvantage)
                 
                 // Evaluation text
-                if let eval = evaluation, let pvs = eval.pvs, let firstPv = pvs.first {
-                    Text(evaluationText(pvs: pvs))
+                if evaluation != nil {
+                    Text(evaluationText(eval: evaluation))
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(whiteAdvantage > 0.5 ? .black : .white)
                         .rotationEffect(.degrees(-90))
@@ -910,51 +915,78 @@ struct LichessEditorView: View {
         }
     }
     
-    private var bestMovesPanel: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let pvs = evaluation?.pvs {
-                ForEach(Array(pvs.prefix(3).enumerated()), id: \.offset) { index, pv in
-                    bestMoveRow(index: index, pv: pv)
+    private var bestMoveDisplay: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                // Best move
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Best Move")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.5))
+                    
+                    if let move = evaluation?.move {
+                        Text(move)
+                            .font(.system(size: 16, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
+                    }
                 }
+                
+                Spacer()
+                
+                // Evaluation
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("Evaluation")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.5))
+                    
+                    if let evalValue = evaluation?.eval {
+                        Text(String(format: "%+.2f", evalValue))
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(evalColor(eval: evalValue))
+                    } else if let mate = evaluation?.mate {
+                        Text("M\(abs(mate))")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(mate > 0 ? .green : .red)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color.white.opacity(0.08))
+            .cornerRadius(10)
+            
+            // Continuation line
+            if let continuation = evaluation?.continuationArr, !continuation.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Continuation")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.5))
+                    
+                    Text(continuation.prefix(5).joined(separator: " "))
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.9))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color.white.opacity(0.05))
+                .cornerRadius(8)
             }
         }
     }
     
-    private func bestMoveRow(index: Int, pv: LichessCloudEval.PVLine) -> some View {
-        HStack(spacing: 8) {
-            Text("\(index + 1).")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.white.opacity(0.5))
-                .frame(width: 20)
-            
-            Text(formatMove(moves: pv.moves))
-                .font(.system(size: 13, weight: .medium, design: .monospaced))
-                .foregroundColor(.white.opacity(0.9))
-            
-            Spacer()
-            
-            Text(formatEvaluation(cp: pv.cp, mate: pv.mate))
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(evaluationColor(cp: pv.cp, mate: pv.mate))
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(Color.white.opacity(0.05))
-        .cornerRadius(6)
-    }
-    
     private func evaluationToPercentage() -> CGFloat {
-        guard let eval = evaluation, let pvs = eval.pvs, let firstPv = pvs.first else {
+        guard let eval = evaluation else {
             return 0.5  // Equal position
         }
         
-        if let mate = firstPv.mate {
+        if let mate = eval.mate {
             return mate > 0 ? 0.95 : 0.05
         }
         
-        if let cp = firstPv.cp {
-            // Convert centipawns to percentage (clamped between 0 and 1)
-            let normalizedEval = Double(cp) / 1000.0  // Divide by 10 pawns worth
+        if let evalValue = eval.eval {
+            // Chess-API returns eval as pawns (e.g., 1.5 = +1.5 pawns)
+            let normalizedEval = evalValue / 10.0  // Divide by 10 pawns for scaling
             let percentage = 0.5 + (normalizedEval / 2.0)
             return CGFloat(max(0.05, min(0.95, percentage)))
         }
@@ -962,74 +994,77 @@ struct LichessEditorView: View {
         return 0.5
     }
     
-    private func evaluationText(pvs: [LichessCloudEval.PVLine]) -> String {
-        guard let firstPv = pvs.first else { return "0.0" }
+    private func evaluationText(eval: ChessAPIEval?) -> String {
+        guard let eval = eval else { return "0.0" }
         
-        if let mate = firstPv.mate {
+        if let mate = eval.mate {
             return "M\(abs(mate))"
         }
         
-        if let cp = firstPv.cp {
-            let pawns = Double(cp) / 100.0
-            return String(format: "%.1f", pawns)
+        if let evalValue = eval.eval {
+            return String(format: "%.1f", evalValue)
         }
         
         return "0.0"
     }
     
-    private func formatEvaluation(cp: Int?, mate: Int?) -> String {
-        if let mate = mate {
-            return "M\(abs(mate))"
-        }
-        if let cp = cp {
-            let pawns = Double(cp) / 100.0
-            return String(format: "%+.1f", pawns)
-        }
-        return "0.0"
-    }
-    
-    private func formatMove(moves: String) -> String {
-        // Take first few moves from PV line
-        let moveComponents = moves.split(separator: " ")
-        return moveComponents.prefix(3).map { String($0) }.joined(separator: " ")
-    }
-    
-    private func evaluationColor(cp: Int?, mate: Int?) -> Color {
-        if let mate = mate {
-            return mate > 0 ? Color.green : Color.red
-        }
-        if let cp = cp {
-            if cp > 100 { return Color.green }
-            if cp < -100 { return Color.red }
-            return Color.yellow
-        }
-        return Color.gray
+    private func evalColor(eval: Double) -> Color {
+        if eval > 1.0 { return Color.green }
+        if eval < -1.0 { return Color.red }
+        return Color.yellow
     }
     
     private func fetchCloudEvaluation() {
         let fen = generateFEN()
-        guard let encodedFEN = fen.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://lichess.org/api/cloud-eval?fen=\(encodedFEN)&multiPv=3") else {
+        guard let url = URL(string: "https://chess-api.com/v1") else {
+            print("❌ Invalid URL for Chess API")
             return
         }
         
+        print("🔍 Fetching Chess-API eval for FEN: \(fen)")
         isLoadingEval = true
         
         Task {
             do {
-                let (data, _) = try await URLSession.shared.data(from: url)
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                
+                let requestBody: [String: Any] = [
+                    "fen": fen,
+                    "depth": 15,  // Good balance of speed vs accuracy
+                    "variants": 1
+                ]
+                request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+                
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                // Log raw response
+                if let httpResponse = response as? HTTPURLResponse {
+                    print("🔍 Chess-API HTTP status: \(httpResponse.statusCode)")
+                }
+                if let jsonString = String(data: data, encoding: .utf8) {
+                    print("🔍 Chess-API response: \(jsonString)")
+                }
+                
                 let decoder = JSONDecoder()
-                let result = try decoder.decode(LichessCloudEval.self, from: data)
+                let result = try decoder.decode(ChessAPIEval.self, from: data)
                 
                 await MainActor.run {
-                    evaluation = result
+                    if result.type == "error" {
+                        print("❌ Chess-API error: \(result.error ?? "unknown"), text: \(result.text ?? "")")
+                        evaluation = nil
+                    } else {
+                        evaluation = result
+                        print("✅ Chess-API eval: \(result.eval ?? 0.0), mate: \(result.mate ?? 0)")
+                        print("✅ Best move: \(result.move ?? "none")")
+                    }
                     isLoadingEval = false
-                    print("✅ Cloud eval: \(result.pvs?.first?.cp ?? 0) cp, depth: \(result.depth ?? 0)")
                 }
             } catch {
                 await MainActor.run {
                     isLoadingEval = false
-                    print("❌ Cloud eval error: \(error)")
+                    print("❌ Chess-API error: \(error)")
                 }
             }
         }
