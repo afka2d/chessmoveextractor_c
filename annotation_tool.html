@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Board Annotation Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+        
+        .main-content {
+            display: flex;
+            height: calc(100vh - 200px);
+        }
+        
+        .image-panel {
+            flex: 1;
+            padding: 20px;
+            border-right: 1px solid #eee;
+        }
+        
+        .controls-panel {
+            width: 400px;
+            padding: 20px;
+            background: #fafafa;
+            overflow-y: auto;
+        }
+        
+        .image-container {
+            position: relative;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #f9f9f9;
+            min-height: 500px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .image-container img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        
+        .corner-dot {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: #ff4444;
+            border: 3px solid white;
+            border-radius: 50%;
+            cursor: pointer;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            z-index: 10;
+        }
+        
+        .corner-dot:hover {
+            transform: translate(-50%, -50%) scale(1.2);
+        }
+        
+        .corner-dot.selected {
+            background: #44ff44;
+            box-shadow: 0 0 0 3px #44ff44;
+        }
+        
+        .file-input {
+            margin-bottom: 20px;
+        }
+        
+        .file-input input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+        }
+        
+        .file-input input[type="file"]:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .btn {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #5a6fd8;
+            transform: translateY(-1px);
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #218838;
+        }
+        
+        .btn-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+        
+        .btn-warning:hover {
+            background: #e0a800;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-weight: 500;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        .image-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 10px;
+            background: white;
+        }
+        
+        .image-item {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .image-item:hover {
+            background: #f8f9ff;
+        }
+        
+        .image-item.active {
+            background: #e3f2fd;
+            font-weight: 600;
+        }
+        
+        .image-item:last-child {
+            border-bottom: none;
+        }
+        
+        .export-section {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #eee;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>♟️ Chess Board Annotation Tool</h1>
+            <p>Annotate chess board images with corners and FEN positions for training data</p>
+        </div>
+        
+        <div class="main-content">
+            <div class="image-panel">
+                <div class="file-input">
+                    <input type="file" id="imageInput" accept="image/*" multiple>
+                </div>
+                
+                <div class="image-container" id="imageContainer">
+                    <p style="color: #666; font-size: 1.2rem;">Select images to start annotating</p>
+                </div>
+                
+                <div class="button-group" style="margin-top: 15px;">
+                    <button class="btn btn-primary" id="autoDetectBtn" disabled>🔍 Auto-Detect Corners</button>
+                    <button class="btn btn-secondary" id="resetCornersBtn" disabled>🔄 Reset Corners</button>
+                </div>
+            </div>
+            
+            <div class="controls-panel">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                
+                <div id="statusMessage" class="status hidden"></div>
+                
+                <div class="form-group">
+                    <label for="imageSet">Image Set:</label>
+                    <select id="imageSet">
+                        <option value="set1">Set 1 (Original)</option>
+                        <option value="set2" selected>Set 2 (New Training Data)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="fenInput">FEN Position:</label>
+                    <textarea id="fenInput" rows="3" placeholder="e.g., rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="notesInput">Notes (Optional):</label>
+                    <textarea id="notesInput" rows="2" placeholder="Any additional notes about this position..."></textarea>
+                </div>
+                
+                <div class="button-group">
+                    <button class="btn btn-success" id="saveBtn" disabled>💾 Save Annotation</button>
+                    <button class="btn btn-warning" id="skipBtn" disabled>⏭️ Skip Image</button>
+                </div>
+                
+                <div class="form-group">
+                    <label>Current Image:</label>
+                    <div id="currentImageInfo" style="color: #666; font-size: 0.9rem;">No image selected</div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Progress:</label>
+                    <div id="progressInfo" style="color: #666; font-size: 0.9rem;">0 / 0 images</div>
+                </div>
+                
+                <div class="image-list" id="imageList"></div>
+                
+                <div class="export-section">
+                    <h3 style="margin-bottom: 15px; color: #333;">Export Data</h3>
+                    <button class="btn btn-primary" id="exportBtn" disabled>📥 Export Annotations</button>
+                    <button class="btn btn-secondary" id="downloadBtn" disabled>⬇️ Download JSON</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class ChessAnnotationTool {
+            constructor() {
+                this.images = [];
+                this.currentIndex = 0;
+                this.annotations = [];
+                this.corners = [];
+                this.selectedCorner = -1;
+                this.isDragging = false;
+                
+                this.initializeElements();
+                this.bindEvents();
+            }
+            
+            initializeElements() {
+                this.imageInput = document.getElementById('imageInput');
+                this.imageContainer = document.getElementById('imageContainer');
+                this.autoDetectBtn = document.getElementById('autoDetectBtn');
+                this.resetCornersBtn = document.getElementById('resetCornersBtn');
+                this.imageSet = document.getElementById('imageSet');
+                this.fenInput = document.getElementById('fenInput');
+                this.notesInput = document.getElementById('notesInput');
+                this.saveBtn = document.getElementById('saveBtn');
+                this.skipBtn = document.getElementById('skipBtn');
+                this.exportBtn = document.getElementById('exportBtn');
+                this.downloadBtn = document.getElementById('downloadBtn');
+                this.statusMessage = document.getElementById('statusMessage');
+                this.progressFill = document.getElementById('progressFill');
+                this.currentImageInfo = document.getElementById('currentImageInfo');
+                this.progressInfo = document.getElementById('progressInfo');
+                this.imageList = document.getElementById('imageList');
+            }
+            
+            bindEvents() {
+                this.imageInput.addEventListener('change', (e) => this.handleImageUpload(e));
+                this.autoDetectBtn.addEventListener('click', () => this.autoDetectCorners());
+                this.resetCornersBtn.addEventListener('click', () => this.resetCorners());
+                this.saveBtn.addEventListener('click', () => this.saveAnnotation());
+                this.skipBtn.addEventListener('click', () => this.skipImage());
+                this.exportBtn.addEventListener('click', () => this.exportAnnotations());
+                this.downloadBtn.addEventListener('click', () => this.downloadAnnotations());
+                
+                // Image container events for corner dragging
+                this.imageContainer.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+                this.imageContainer.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+                this.imageContainer.addEventListener('mouseup', () => this.handleMouseUp());
+                this.imageContainer.addEventListener('click', (e) => this.handleImageClick(e));
+            }
+            
+            handleImageUpload(event) {
+                const files = Array.from(event.target.files);
+                this.images = files.map((file, index) => ({
+                    file,
+                    name: file.name,
+                    index,
+                    annotated: false
+                }));
+                
+                this.currentIndex = 0;
+                this.updateUI();
+                this.loadCurrentImage();
+                this.showStatus(`Loaded ${files.length} images`, 'success');
+            }
+            
+            loadCurrentImage() {
+                if (this.images.length === 0) return;
+                
+                const currentImage = this.images[this.currentIndex];
+                const reader = new FileReader();
+                
+                reader.onload = (e) => {
+                    this.imageContainer.innerHTML = `
+                        <img src="${e.target.result}" alt="Chess board" id="currentImage">
+                    `;
+                    
+                    const img = document.getElementById('currentImage');
+                    img.onload = () => {
+                        this.initializeCorners();
+                        this.updateUI();
+                    };
+                };
+                
+                reader.readAsDataURL(currentImage.file);
+            }
+            
+            initializeCorners() {
+                const img = document.getElementById('currentImage');
+                if (!img) return;
+                
+                const rect = img.getBoundingClientRect();
+                const containerRect = this.imageContainer.getBoundingClientRect();
+                
+                // Default corners (center of image)
+                const centerX = rect.width / 2;
+                const centerY = rect.height / 2;
+                const offset = Math.min(rect.width, rect.height) * 0.3;
+                
+                this.corners = [
+                    { x: centerX - offset, y: centerY - offset }, // Top-left
+                    { x: centerX + offset, y: centerY - offset }, // Top-right
+                    { x: centerX + offset, y: centerY + offset }, // Bottom-right
+                    { x: centerX - offset, y: centerY + offset }  // Bottom-left
+                ];
+                
+                this.renderCorners();
+            }
+            
+            renderCorners() {
+                // Remove existing corner dots
+                document.querySelectorAll('.corner-dot').forEach(dot => dot.remove());
+                
+                // Add new corner dots
+                this.corners.forEach((corner, index) => {
+                    const dot = document.createElement('div');
+                    dot.className = 'corner-dot';
+                    dot.style.left = `${corner.x}px`;
+                    dot.style.top = `${corner.y}px`;
+                    dot.dataset.index = index;
+                    this.imageContainer.appendChild(dot);
+                });
+            }
+            
+            handleMouseDown(e) {
+                const dot = e.target.closest('.corner-dot');
+                if (dot) {
+                    this.selectedCorner = parseInt(dot.dataset.index);
+                    this.isDragging = true;
+                    dot.classList.add('selected');
+                    e.preventDefault();
+                }
+            }
+            
+            handleMouseMove(e) {
+                if (!this.isDragging || this.selectedCorner === -1) return;
+                
+                const rect = this.imageContainer.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                this.corners[this.selectedCorner] = { x, y };
+                this.renderCorners();
+            }
+            
+            handleMouseUp() {
+                this.isDragging = false;
+                this.selectedCorner = -1;
+                document.querySelectorAll('.corner-dot').forEach(dot => dot.classList.remove('selected'));
+            }
+            
+            handleImageClick(e) {
+                if (e.target.tagName === 'IMG') {
+                    const rect = this.imageContainer.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    
+                    // Find closest corner and move it
+                    let closestIndex = 0;
+                    let minDistance = Infinity;
+                    
+                    this.corners.forEach((corner, index) => {
+                        const distance = Math.sqrt(
+                            Math.pow(corner.x - x, 2) + Math.pow(corner.y - y, 2)
+                        );
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            closestIndex = index;
+                        }
+                    });
+                    
+                    this.corners[closestIndex] = { x, y };
+                    this.renderCorners();
+                }
+            }
+            
+            async autoDetectCorners() {
+                if (this.images.length === 0) return;
+                
+                this.showStatus('Detecting corners...', 'info');
+                this.autoDetectBtn.disabled = true;
+                this.autoDetectBtn.innerHTML = '<span class="loading"></span> Detecting...';
+                
+                try {
+                    const currentImage = this.images[this.currentIndex];
+                    const formData = new FormData();
+                    formData.append('file', currentImage.file);
+                    
+                    const response = await fetch('http://192.168.0.15:8005/detect_corners', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    if (data.corners && data.corners.length === 4) {
+                        const img = document.getElementById('currentImage');
+                        const rect = img.getBoundingClientRect();
+                        
+                        // Convert normalized coordinates to pixel coordinates
+                        this.corners = data.corners.map(corner => ({
+                            x: corner[0] * rect.width,
+                            y: corner[1] * rect.height
+                        }));
+                        
+                        this.renderCorners();
+                        this.showStatus('Corners detected successfully!', 'success');
+                    } else {
+                        throw new Error('Invalid corner data received');
+                    }
+                } catch (error) {
+                    console.error('Corner detection error:', error);
+                    this.showStatus(`Detection failed: ${error.message}`, 'error');
+                } finally {
+                    this.autoDetectBtn.disabled = false;
+                    this.autoDetectBtn.innerHTML = '🔍 Auto-Detect Corners';
+                }
+            }
+            
+            resetCorners() {
+                this.initializeCorners();
+                this.showStatus('Corners reset to default positions', 'info');
+            }
+            
+            saveAnnotation() {
+                if (this.images.length === 0) return;
+                
+                const fen = this.fenInput.value.trim();
+                if (!fen) {
+                    this.showStatus('Please enter a FEN position', 'error');
+                    return;
+                }
+                
+                const currentImage = this.images[this.currentIndex];
+                const img = document.getElementById('currentImage');
+                const rect = img.getBoundingClientRect();
+                
+                // Convert pixel coordinates to normalized coordinates
+                const normalizedCorners = this.corners.map(corner => [
+                    corner.x / rect.width,
+                    corner.y / rect.height
+                ]);
+                
+                const annotation = {
+                    filename: currentImage.name,
+                    imageSet: this.imageSet.value,
+                    fen: fen,
+                    corners: normalizedCorners,
+                    notes: this.notesInput.value.trim(),
+                    timestamp: new Date().toISOString(),
+                    imageSize: {
+                        width: rect.width,
+                        height: rect.height
+                    }
+                };
+                
+                // Update or add annotation
+                const existingIndex = this.annotations.findIndex(a => a.filename === currentImage.name);
+                if (existingIndex >= 0) {
+                    this.annotations[existingIndex] = annotation;
+                } else {
+                    this.annotations.push(annotation);
+                }
+                
+                currentImage.annotated = true;
+                this.showStatus('Annotation saved!', 'success');
+                this.updateUI();
+                
+                // Auto-advance to next image
+                this.nextImage();
+            }
+            
+            skipImage() {
+                this.nextImage();
+                this.showStatus('Image skipped', 'info');
+            }
+            
+            nextImage() {
+                if (this.currentIndex < this.images.length - 1) {
+                    this.currentIndex++;
+                    this.loadCurrentImage();
+                    this.clearForm();
+                } else {
+                    this.showStatus('All images processed!', 'success');
+                }
+            }
+            
+            clearForm() {
+                this.fenInput.value = '';
+                this.notesInput.value = '';
+            }
+            
+            updateUI() {
+                const currentImage = this.images[this.currentIndex];
+                const annotatedCount = this.annotations.length;
+                const totalCount = this.images.length;
+                
+                // Update progress
+                this.progressFill.style.width = `${(annotatedCount / totalCount) * 100}%`;
+                this.progressInfo.textContent = `${annotatedCount} / ${totalCount} images`;
+                
+                // Update current image info
+                if (currentImage) {
+                    this.currentImageInfo.textContent = `${currentImage.name} (${currentImage.annotated ? 'Annotated' : 'Not annotated'})`;
+                }
+                
+                // Update buttons
+                const hasImages = this.images.length > 0;
+                this.autoDetectBtn.disabled = !hasImages;
+                this.resetCornersBtn.disabled = !hasImages;
+                this.saveBtn.disabled = !hasImages;
+                this.skipBtn.disabled = !hasImages;
+                this.exportBtn.disabled = this.annotations.length === 0;
+                this.downloadBtn.disabled = this.annotations.length === 0;
+                
+                // Update image list
+                this.updateImageList();
+            }
+            
+            updateImageList() {
+                this.imageList.innerHTML = this.images.map((img, index) => `
+                    <div class="image-item ${index === this.currentIndex ? 'active' : ''}" 
+                         onclick="annotationTool.goToImage(${index})">
+                        ${img.name} ${img.annotated ? '✅' : '⏳'}
+                    </div>
+                `).join('');
+            }
+            
+            goToImage(index) {
+                this.currentIndex = index;
+                this.loadCurrentImage();
+                this.clearForm();
+                this.updateUI();
+            }
+            
+            exportAnnotations() {
+                const exportData = {
+                    metadata: {
+                        totalImages: this.images.length,
+                        annotatedImages: this.annotations.length,
+                        exportDate: new Date().toISOString(),
+                        toolVersion: '1.0.0'
+                    },
+                    annotations: this.annotations
+                };
+                
+                console.log('Export Data:', exportData);
+                this.showStatus(`Exported ${this.annotations.length} annotations to console`, 'success');
+            }
+            
+            downloadAnnotations() {
+                const exportData = {
+                    metadata: {
+                        totalImages: this.images.length,
+                        annotatedImages: this.annotations.length,
+                        exportDate: new Date().toISOString(),
+                        toolVersion: '1.0.0'
+                    },
+                    annotations: this.annotations
+                };
+                
+                const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `chess_annotations_${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                this.showStatus('Annotations downloaded!', 'success');
+            }
+            
+            showStatus(message, type) {
+                this.statusMessage.textContent = message;
+                this.statusMessage.className = `status ${type}`;
+                this.statusMessage.classList.remove('hidden');
+                
+                setTimeout(() => {
+                    this.statusMessage.classList.add('hidden');
+                }, 3000);
+            }
+        }
+        
+        // Initialize the tool
+        const annotationTool = new ChessAnnotationTool();
+    </script>
+</body>
+</html>
+

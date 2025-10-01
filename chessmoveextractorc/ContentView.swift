@@ -1019,8 +1019,8 @@ extension String {
 
 
 class LocalChessService {
-    private let recognizeURL = "https://api.chesspositionscanner.store/recognize_chess_position_with_corners"
-    private let detectCornersURL = "http://192.168.0.15:8002/detect_corners"
+    private let recognizeURL = "http://159.203.102.249:8010/recognize_chess_position_with_corners"
+    private let detectCornersURL = "http://159.203.102.249:8011/detect_corners"
     private let debugLogger = DebugLogger()
     
     func recognizePositionWithCorners(imageData: Data, corners: [CGPoint]) async throws -> (ChessPositionResponse?, String?, [String: UIImage]?) {
@@ -1035,9 +1035,11 @@ class LocalChessService {
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
+        request.timeoutInterval = 30.0 // 30 second timeout
         
         debugLogger.log("Making recognize_chess_position_with_corners API call with \(imageData.count) bytes and manual corners")
         debugLogger.log("Manual corners: \(corners.map { "(\($0.x), \($0.y))" }.joined(separator: ", "))")
+        debugLogger.log("Target URL: \(recognizeURL)")
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
