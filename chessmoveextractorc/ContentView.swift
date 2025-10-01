@@ -3033,7 +3033,7 @@ struct FullScreenCornerEditor: View {
                             } else {
                                 Image(systemName: "square.grid.3x3.fill")
                                     .font(.title3)
-                                Text("Edit Position")
+                                Text("Analyze Position")
                                     .font(.title3)
                                     .fontWeight(.semibold)
                             }

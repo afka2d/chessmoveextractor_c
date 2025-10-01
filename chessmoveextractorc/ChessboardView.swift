@@ -10,7 +10,7 @@ struct ChessboardView: View {
     @State private var selectedPieceColor: Bool = true // true = white, false = black
     @State private var currentFEN: String = ""
     @State private var sideToMove: Bool = true // true = white, false = black
-    @State private var castlingRights: Set<String> = ["K", "Q", "k", "q"]
+    @State private var castlingRights: Set<String> = []  // No castling by default for custom positions
     @State private var showFENField: Bool = false
     @State private var isFlipped: Bool = false
     
@@ -221,8 +221,8 @@ struct ChessboardView: View {
                         fenString += "\(emptyCount)"
                         emptyCount = 0
                     }
-                    let char = piece.type
-                    fenString += piece.isWhite ? char.uppercased() : char.lowercased()
+                    let char = piece.type.lowercased()  // Ensure lowercase
+                    fenString += piece.isWhite ? char.uppercased() : char
                 } else {
                     emptyCount += 1
                 }
@@ -236,9 +236,10 @@ struct ChessboardView: View {
         }
         
         // Add side to move
-        fenString += sideToMove ? " w " : " b "
+        fenString += sideToMove ? " w" : " b"
         
         // Add castling rights
+        fenString += " "
         if castlingRights.isEmpty {
             fenString += "-"
         } else {
@@ -249,6 +250,7 @@ struct ChessboardView: View {
         // Add en passant and move counters
         fenString += " - 0 1"
         
+        print("📋 Generated FEN: \(fenString)")
         return fenString
     }
     
@@ -585,6 +587,8 @@ struct LichessEditorView: View {
     @State private var dragOffset: CGFloat = 0
     @State private var evaluation: ChessAPIEval? = nil
     @State private var isLoadingEval: Bool = false
+    @State private var positionError: String? = nil
+    @State private var selectedBoardPiece: (row: Int, col: Int)? = nil
     
     var body: some View {
         ZStack {
@@ -602,14 +606,17 @@ struct LichessEditorView: View {
                 Spacer(minLength: 20)
                 
                 GeometryReader { geometry in
-                    let availableWidth = geometry.size.width - 16  // Account for horizontal padding
-                    let boardWidth = availableWidth - 24 - 12  // Subtract eval bar width and spacing
-                    let boardSize = min(boardWidth, geometry.size.height)
+                    let totalWidth = geometry.size.width
+                    let totalHeight = geometry.size.height
+                    // Account for padding and eval bar
+                    let availableWidth = totalWidth - 40  // 8px padding each side + margins
+                    let availableHeight = totalHeight
+                    let boardSize = min(availableWidth - 36, availableHeight)  // 36 = eval bar (24) + spacing (12)
                     
-                    HStack(spacing: 12) {
+                    HStack(spacing: 8) {
                         // Evaluation bar (left side) - exact board height
                         evaluationBar
-                            .frame(width: 24, height: boardSize)
+                            .frame(width: 20, height: boardSize)
                         
                         // Chessboard
                         editorChessboard
@@ -617,10 +624,25 @@ struct LichessEditorView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 12)
                 
-                // Best move display
-                if let eval = evaluation, let move = eval.move {
+                // Position error message or best move display
+                if let error = positionError {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.yellow)
+                        Text(error)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white.opacity(0.9))
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(Color.orange.opacity(0.2))
+                    .cornerRadius(10)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                } else if let eval = evaluation, let move = eval.move {
                     bestMoveDisplay
                         .padding(.horizontal, 16)
                         .padding(.top, 12)
@@ -629,19 +651,37 @@ struct LichessEditorView: View {
                 Spacer(minLength: 20)
                 
                 // Piece palette (two rows) - Exact Lichess style
-                VStack(spacing: 8) {
+                VStack(spacing: 6) {
                     // Black pieces
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
+                        // Trash/delete tool
+                        Button(action: {
+                            selectedPieceType = "delete"
+                            selectedBoardPiece = nil
+                        }) {
+                            Image(systemName: "trash.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(.white)
+                                .frame(width: 36, height: 36)
+                                .padding(4)
+                                .background(
+                                    selectedPieceType == "delete" ?
+                                        Color.red.opacity(0.3) : Color.clear
+                                )
+                                .cornerRadius(6)
+                        }
+                        
                         ForEach(["k", "q", "r", "b", "n", "p"], id: \.self) { pieceType in
                             Button(action: {
                                 selectedPieceType = pieceType
                                 selectedPieceColor = false
+                                selectedBoardPiece = nil
                             }) {
                                 Image(ChessPiece(type: pieceType, isWhite: false).imageName)
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
-                                    .frame(width: 42, height: 42)
-                                    .padding(6)
+                                    .frame(width: 36, height: 36)
+                                    .padding(4)
                                     .background(
                                         selectedPieceType == pieceType && !selectedPieceColor ?
                                             Color.white.opacity(0.15) : Color.clear
@@ -652,17 +692,35 @@ struct LichessEditorView: View {
                     }
                     
                     // White pieces
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
+                        // Clear selection tool
+                        Button(action: {
+                            selectedPieceType = nil
+                            selectedBoardPiece = nil
+                        }) {
+                            Image(systemName: "hand.point.up.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(.white)
+                                .frame(width: 36, height: 36)
+                                .padding(4)
+                                .background(
+                                    selectedPieceType == nil ?
+                                        Color.green.opacity(0.3) : Color.clear
+                                )
+                                .cornerRadius(6)
+                        }
+                        
                         ForEach(["k", "q", "r", "b", "n", "p"], id: \.self) { pieceType in
                             Button(action: {
                                 selectedPieceType = pieceType
                                 selectedPieceColor = true
+                                selectedBoardPiece = nil
                             }) {
                                 Image(ChessPiece(type: pieceType, isWhite: true).imageName)
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
-                                    .frame(width: 42, height: 42)
-                                    .padding(6)
+                                    .frame(width: 36, height: 36)
+                                    .padding(4)
                                     .background(
                                         selectedPieceType == pieceType && selectedPieceColor ?
                                             Color.white.opacity(0.15) : Color.clear
@@ -672,67 +730,23 @@ struct LichessEditorView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 8)
                 .padding(.vertical, 12)
+                .padding(.bottom, 16)
                 .background(Color(red: 0.20, green: 0.20, blue: 0.20))
-                
-                // Bottom action icons - Exact Lichess layout
-                HStack {
-                    Button(action: setStartPosition) {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(.white.opacity(0.6))
-                            .frame(width: 44, height: 44)
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: { isFlipped.toggle() }) {
-                        Image(systemName: "arrow.up.arrow.down")
-                            .font(.system(size: 24))
-                            .foregroundColor(.white.opacity(0.6))
-                            .frame(width: 44, height: 44)
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: clearBoard) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 24))
-                            .foregroundColor(.white.opacity(0.6))
-                            .frame(width: 44, height: 44)
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: { selectedPieceType = "delete" }) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 24))
-                            .foregroundColor(selectedPieceType == "delete" ? .white : .white.opacity(0.6))
-                            .frame(width: 44, height: 44)
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: copyFEN) {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 24))
-                            .foregroundColor(.white.opacity(0.6))
-                            .frame(width: 44, height: 44)
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: openInLichess) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 24))
-                            .foregroundColor(.white.opacity(0.6))
-                            .frame(width: 44, height: 44)
+                .onTapGesture {
+                    // Tap outside board to deselect and remove selected piece
+                    if let selected = selectedBoardPiece {
+                        boardState[selected.row][selected.col] = nil
+                        selectedBoardPiece = nil
+                        // Force state update and evaluation
+                        let newState = boardState
+                        boardState = newState
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            fetchCloudEvaluation()
+                        }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .padding(.bottom, 4)
             }
         }
         .offset(y: dragOffset)
@@ -761,8 +775,12 @@ struct LichessEditorView: View {
         .onAppear {
             print("🎯 LichessEditorView appeared")
             print("🎯 Board state has \(boardState.flatMap { $0 }.compactMap { $0 }.count) pieces")
-            // Fetch evaluation when board opens
-            fetchCloudEvaluation()
+            
+            // Small delay to ensure UI has rendered pieces before fetching evaluation
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                print("🎯 Delayed evaluation fetch, board now has \(boardState.flatMap { $0 }.compactMap { $0 }.count) pieces")
+                fetchCloudEvaluation()
+            }
         }
         .onChange(of: boardState) { _, newState in
             print("🎯 Board state changed, now has \(newState.flatMap { $0 }.compactMap { $0 }.count) pieces")
@@ -804,6 +822,14 @@ struct LichessEditorView: View {
                           Color(red: 0.93, green: 0.89, blue: 0.78) :
                           Color(red: 0.70, green: 0.53, blue: 0.39))
                     .frame(width: squareSize, height: squareSize)
+                    .overlay(
+                        Rectangle()
+                            .stroke(
+                                selectedBoardPiece?.row == row && selectedBoardPiece?.col == col ?
+                                    Color.yellow.opacity(0.8) : Color.clear,
+                                lineWidth: 3
+                            )
+                    )
                 
                 // Rank numbers on RIGHT edge (h-file) - top-right corner
                 if col == 7 {
@@ -855,18 +881,28 @@ struct LichessEditorView: View {
     }
     
     private func handleSquareTap(row: Int, col: Int) {
+        // If a piece from palette is selected, place or delete
         if let pieceType = selectedPieceType {
             if pieceType == "delete" {
                 boardState[row][col] = nil
             } else {
                 boardState[row][col] = ChessPiece(type: pieceType, isWhite: selectedPieceColor)
             }
-        } else {
-            boardState[row][col] = nil
+            // Force state update and evaluation
+            let newState = boardState
+            boardState = newState
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                fetchCloudEvaluation()
+            }
         }
-        
-        // Trigger evaluation update after changing position
-        fetchCloudEvaluation()
+        // If no palette piece selected, select the board piece for removal
+        else if boardState[row][col] != nil {
+            selectedBoardPiece = (row, col)
+        }
+        // If tapping empty square with board piece selected, cancel selection
+        else {
+            selectedBoardPiece = nil
+        }
     }
     
     private func setStartPosition() {
@@ -1016,12 +1052,52 @@ struct LichessEditorView: View {
     
     private func fetchCloudEvaluation() {
         let fen = generateFEN()
+        
+        // Validate FEN has required kings
+        let pieces = boardState.flatMap { $0 }.compactMap { $0 }
+        let whiteKings = pieces.filter { $0.type == "k" && $0.isWhite }.count
+        let blackKings = pieces.filter { $0.type == "k" && !$0.isWhite }.count
+        
+        if whiteKings != 1 || blackKings != 1 {
+            var errorMsg = "Invalid position: "
+            if whiteKings == 0 { errorMsg += "missing white king" }
+            else if whiteKings > 1 { errorMsg += "\(whiteKings) white kings (need exactly 1)" }
+            if blackKings == 0 { errorMsg += (whiteKings != 1 ? ", " : "") + "missing black king" }
+            else if blackKings > 1 { errorMsg += (whiteKings != 1 ? ", " : "") + "\(blackKings) black kings (need exactly 1)" }
+            
+            positionError = errorMsg
+            evaluation = nil
+            isLoadingEval = false
+            print("❌ \(errorMsg)")
+            return
+        }
+        
         guard let url = URL(string: "https://chess-api.com/v1") else {
             print("❌ Invalid URL for Chess API")
             return
         }
         
         print("🔍 Fetching Chess-API eval for FEN: \(fen)")
+        print("🔍 FEN length: \(fen.count) characters")
+        print("🔍 FEN components: \(fen.components(separatedBy: " "))")
+        print("🔍 Board has \(pieces.count) pieces")
+        print("🔍 White pieces: \(pieces.filter { $0.isWhite }.count)")
+        print("🔍 Black pieces: \(pieces.filter { !$0.isWhite }.count)")
+        
+        // Print piece by piece for debugging
+        for row in 0..<8 {
+            var rowStr = ""
+            for col in 0..<8 {
+                if let piece = boardState[row][col] {
+                    rowStr += piece.isWhite ? piece.type.uppercased() : piece.type.lowercased()
+                } else {
+                    rowStr += "."
+                }
+            }
+            print("🔍 Row \(row): \(rowStr)")
+        }
+        
+        positionError = nil  // Clear any previous error
         isLoadingEval = true
         
         Task {
@@ -1035,7 +1111,12 @@ struct LichessEditorView: View {
                     "depth": 15,  // Good balance of speed vs accuracy
                     "variants": 1
                 ]
-                request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+                
+                let jsonData = try JSONSerialization.data(withJSONObject: requestBody)
+                if let jsonString = String(data: jsonData, encoding: .utf8) {
+                    print("🔍 Request body: \(jsonString)")
+                }
+                request.httpBody = jsonData
                 
                 let (data, response) = try await URLSession.shared.data(for: request)
                 
@@ -1054,8 +1135,10 @@ struct LichessEditorView: View {
                     if result.type == "error" {
                         print("❌ Chess-API error: \(result.error ?? "unknown"), text: \(result.text ?? "")")
                         evaluation = nil
+                        positionError = result.text ?? "Invalid position"
                     } else {
                         evaluation = result
+                        positionError = nil
                         print("✅ Chess-API eval: \(result.eval ?? 0.0), mate: \(result.mate ?? 0)")
                         print("✅ Best move: \(result.move ?? "none")")
                     }
