@@ -1400,10 +1400,12 @@ class CameraManager: NSObject, ObservableObject {
                 self.capturedPhotos[photoIndex].isSendingCornersToAPI = true
             }
             
-            // Create greyed image with chessboard focus for API
-            let normalizedImage = photo.image.fixOrientation()
-            let greyedImage = normalizedImage.createBlurredImageWithChessboardFocus(corners: corners)
-            let imageData = greyedImage?.jpegData(compressionQuality: 0.95) ?? Data()
+            // Create greyed image with chessboard focus for API (on background thread)
+            let imageData = await Task.detached(priority: .userInitiated) {
+                let normalizedImage = photo.image.fixOrientation()
+                let greyedImage = normalizedImage.createBlurredImageWithChessboardFocus(corners: corners)
+                return greyedImage?.jpegData(compressionQuality: 0.80) ?? Data()
+            }.value
             print("🔄 Sending corrected corners to API: \(corners.map { "(\($0.x), \($0.y))" }.joined(separator: ", "))")
             
             // Use the simplified LocalChessService
@@ -2875,145 +2877,201 @@ struct FullScreenCornerEditor: View {
     @State private var selectedCornerIndex: Int? = nil
     @State private var isProcessing = false
     @State private var hasAnimated = false
+    @State private var dragOffset: CGFloat = 0
 
     var body: some View {
         ZStack {
+            // Full screen image background
             Color.black.ignoresSafeArea()
-            VStack {
-                HStack {
-                    Spacer()
-                    Button(action: onDone) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.largeTitle)
-                            .foregroundColor(.white)
-                    }
-                }
-                .padding()
-                Spacer()
+            
+            Image(uiImage: photo.image)
+                .resizable()
+                .scaledToFit()
+                .ignoresSafeArea()
+            
+            // Corner detection overlay (full screen)
+            GeometryReader { geometry in
                 ZStack {
-                    Image(uiImage: photo.image)
-                        .resizable()
-                        .scaledToFit()
-                        .cornerRadius(12)
-                        .shadow(radius: 10)
-                    GeometryReader { geometry in
-                        ZStack {
-                            // Draw lines between corners
-                            Path { path in
-                                guard corners.count == 4 else { return }
-                                let viewWidth = geometry.size.width
-                                let viewHeight = geometry.size.height
-                                let scaleX = viewWidth / photo.image.size.width
-                                let scaleY = viewHeight / photo.image.size.height
-                                let scale = min(scaleX, scaleY)
-                                let scaledImageWidth = photo.image.size.width * scale
-                                let scaledImageHeight = photo.image.size.height * scale
-                                let xOffset = (viewWidth - scaledImageWidth) / 2.0
-                                let yOffset = (viewHeight - scaledImageHeight) / 2.0
-                                let transformedCorners = corners.map { corner in
-                                    let imageCornerX = corner.x * photo.image.size.width
-                                    let imageCornerY = corner.y * photo.image.size.height
-                                    let transformedX = imageCornerX * scale + xOffset
-                                    let transformedY = imageCornerY * scale + yOffset
-                                    return CGPoint(x: transformedX, y: transformedY)
-                                }
-                                path.move(to: transformedCorners[0])
-                                path.addLine(to: transformedCorners[1])
-                                path.addLine(to: transformedCorners[2])
-                                path.addLine(to: transformedCorners[3])
-                                path.closeSubpath()
-                            }
-                            .stroke(Color.blue, lineWidth: 3)
-                            // Draw interactive corner dots
-                            ForEach(0..<corners.count, id: \ .self) { index in
-                                FullScreenCornerDotView(
-                                    corner: $corners[index],
-                                    index: index,
-                                    geometry: geometry,
-                                    imageSize: photo.image.size,
-                                    isEditing: $isEditing,
-                                    selectedCornerIndex: $selectedCornerIndex
-                                )
-                            }
+                    // Draw lines between corners
+                    Path { path in
+                        guard corners.count == 4 else { return }
+                        let viewWidth = geometry.size.width
+                        let viewHeight = geometry.size.height
+                        let scaleX = viewWidth / photo.image.size.width
+                        let scaleY = viewHeight / photo.image.size.height
+                        let scale = min(scaleX, scaleY)
+                        let scaledImageWidth = photo.image.size.width * scale
+                        let scaledImageHeight = photo.image.size.height * scale
+                        let xOffset = (viewWidth - scaledImageWidth) / 2.0
+                        let yOffset = (viewHeight - scaledImageHeight) / 2.0
+                        let transformedCorners = corners.map { corner in
+                            let imageCornerX = corner.x * photo.image.size.width
+                            let imageCornerY = corner.y * photo.image.size.height
+                            let transformedX = imageCornerX * scale + xOffset
+                            let transformedY = imageCornerY * scale + yOffset
+                            return CGPoint(x: transformedX, y: transformedY)
                         }
+                        path.move(to: transformedCorners[0])
+                        path.addLine(to: transformedCorners[1])
+                        path.addLine(to: transformedCorners[2])
+                        path.addLine(to: transformedCorners[3])
+                        path.closeSubpath()
                     }
-                    // Loading overlay for corner detection
-                    if isDetectingCorners {
-                        Rectangle()
-                            .fill(Color.black.opacity(0.7))
-                        
-                        VStack(spacing: 12) {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                .scaleEffect(1.5)
-                            Text("Detecting corners...")
-                                .font(.title3)
-                                .foregroundColor(.white)
-                                .fontWeight(.medium)
-                        }
+                    .stroke(Color.blue, lineWidth: 3)
+                    
+                    // Draw interactive corner dots
+                    ForEach(0..<corners.count, id: \.self) { index in
+                        FullScreenCornerDotView(
+                            corner: $corners[index],
+                            index: index,
+                            geometry: geometry,
+                            imageSize: photo.image.size,
+                            isEditing: $isEditing,
+                            selectedCornerIndex: $selectedCornerIndex
+                        )
                     }
                 }
-                .aspectRatio(photo.image.size, contentMode: .fit)
-                .padding()
-                Spacer()
+            }
+            
+            // Loading overlay (fullscreen when active)
+            if isDetectingCorners {
+                Color.black.opacity(0.5)
+                    .ignoresSafeArea()
+                
                 VStack(spacing: 16) {
-                    // Instructional text
-                    Text("Manually adjust the board corners if necessary")
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(1.5)
+                    Text("Detecting corners...")
                         .font(.title3)
                         .foregroundColor(.white)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
+                        .fontWeight(.semibold)
+                }
+                .padding(.horizontal, 32)
+                .padding(.vertical, 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20)
+                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                        )
+                )
+                .shadow(color: Color.black.opacity(0.4), radius: 20, x: 0, y: 10)
+            }
+            
+            // Floating UI elements
+            VStack {
+                // Top: Swipe indicator (pull to dismiss)
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(.white.opacity(0.6))
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 12)
+                    .shadow(color: .white.opacity(0.3), radius: 4, x: 0, y: 0)
+                
+                Spacer()
+                
+                // Bottom: Instructions and button
+                VStack(spacing: 14) {
+                    // Instructional text with glass morphism effect
+                    VStack(spacing: 8) {
+                        Text("Manually adjust the board corners as necessary")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                        
+                        Text("Board corners should be inside the algebraic notation around the chess board right on the a1, a8, h1, h8 corners")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.9))
+                            .multilineTextAlignment(.center)
+                            .lineSpacing(3)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                            )
+                    )
+                    .shadow(color: Color.black.opacity(0.3), radius: 16, x: 0, y: 8)
+                    .padding(.horizontal, 20)
                     
-                    // Large Open in Lichess button
+                    // Large Open in Lichess button with glass effect
                     Button(action: {
                         isProcessing = true
                         onSendToAPI(corners)
                     }) {
-                        HStack {
+                        HStack(spacing: 10) {
                             if isProcessing {
                                 ProgressView()
                                     .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                     .scaleEffect(0.8)
                                 Text("Processing...")
-                                    .font(.title2)
+                                    .font(.title3)
                                     .fontWeight(.semibold)
                             } else {
                                 Image(systemName: "arrow.up.forward.app.fill")
-                                    .font(.title2)
+                                    .font(.title3)
                                 Text("Open in Lichess")
-                                    .font(.title2)
+                                    .font(.title3)
                                     .fontWeight(.semibold)
                             }
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
-                        .background(Color.blue)
-                        .cornerRadius(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.blue.opacity(0.8), Color.blue.opacity(0.6)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                                )
+                        )
+                        .shadow(color: Color.blue.opacity(0.5), radius: 16, x: 0, y: 8)
                     }
                     .disabled(isProcessing)
-                        
-                    HStack(spacing: 20) {
-                        // Small save button
-                        Button(action: {
-                            if let greyedImage = photo.image.createBlurredImageWithChessboardFocus(corners: corners) {
-                                onSaveGreyedImage(greyedImage)
-                            }
-                        }) {
-                            Image(systemName: "square.and.arrow.down")
-                                .font(.title2)
-                                .foregroundColor(.white)
-                                .frame(width: 44, height: 44)
-                                .background(Color.green)
-                                .cornerRadius(22)
-                        }
-                        
-                        Spacer()
-                    }
+                    .padding(.horizontal, 20)
                 }
-                        .padding(.bottom, 32)
+                .padding(.bottom, 30)
             }
         }
+        .offset(y: dragOffset)
+        .gesture(
+            DragGesture()
+                .onChanged { gesture in
+                    // Only allow downward dragging
+                    if gesture.translation.height > 0 {
+                        dragOffset = gesture.translation.height
+                    }
+                }
+                .onEnded { gesture in
+                    // Swipe down to dismiss
+                    if gesture.translation.height > 150 {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            dragOffset = 1000 // Slide off screen
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            onDone()
+                        }
+                    } else {
+                        // Spring back
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            dragOffset = 0
+                        }
+                    }
+                }
+        )
         .onAppear {
             print("🖼️ FullScreenCornerEditor appeared")
             print("🖼️ Initial corners: \(corners)")
@@ -3092,14 +3150,32 @@ struct FullScreenCornerDotView: View {
 
     var body: some View {
         ZStack {
+            // Main corner dot with glass effect
             Circle()
-                .fill(selectedCornerIndex == index ? Color.yellow : (isEditing ? Color.blue : Color.red))
-                .frame(width: isEditing ? 32 : 20, height: isEditing ? 32 : 20)
+                .fill(
+                    RadialGradient(
+                        colors: selectedCornerIndex == index ? 
+                            [Color.yellow.opacity(0.9), Color.orange.opacity(0.7)] :
+                            [Color.blue.opacity(0.8), Color.cyan.opacity(0.6)],
+                        center: .topLeading,
+                        startRadius: 0,
+                        endRadius: 20
+                    )
+                )
+                .frame(width: selectedCornerIndex == index ? 40 : 36, height: selectedCornerIndex == index ? 40 : 36)
                 .overlay(
                     Circle()
-                        .stroke(Color.white, lineWidth: 3)
+                        .stroke(Color.white.opacity(0.8), lineWidth: 3)
                 )
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                        .padding(3)
+                )
+                .shadow(color: (selectedCornerIndex == index ? Color.yellow : Color.blue).opacity(0.6), radius: 12, x: 0, y: 4)
+                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
                 .position(transformedCorner)
+                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: selectedCornerIndex == index)
                 .gesture(
                     DragGesture()
                         .onChanged { value in
@@ -3114,14 +3190,24 @@ struct FullScreenCornerDotView: View {
                             }
                         }
                 )
+            
+            // Corner label with glass effect
             Text(cornerLabel(for: index))
-                .font(.caption2)
+                .font(.caption)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
-                .padding(4)
-                .background(Color.black.opacity(0.7))
-                .clipShape(Circle())
-                .position(x: transformedCorner.x, y: transformedCorner.y - 36)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            Capsule()
+                                .stroke(Color.white.opacity(0.4), lineWidth: 1)
+                        )
+                )
+                .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
+                .position(x: transformedCorner.x, y: transformedCorner.y - 40)
         }
     }
 }
