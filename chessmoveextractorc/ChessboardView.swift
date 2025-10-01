@@ -3,6 +3,7 @@ import SwiftUI
 struct ChessboardView: View {
     let fen: String
     let startInEditor: Bool
+    var onEditorDismiss: ((String) -> Void)?  // Callback with edited FEN when editor closes
     @State private var boardState: [[ChessPiece?]] = Array(repeating: Array(repeating: nil, count: 8), count: 8)
     @State private var selectedSquare: (row: Int, col: Int)? = nil
     @State private var showEditor: Bool = false
@@ -14,9 +15,10 @@ struct ChessboardView: View {
     @State private var showFENField: Bool = false
     @State private var isFlipped: Bool = false
     
-    init(fen: String, startInEditor: Bool = false) {
+    init(fen: String, startInEditor: Bool = false, onEditorDismiss: ((String) -> Void)? = nil) {
         self.fen = fen
         self.startInEditor = startInEditor
+        self.onEditorDismiss = onEditorDismiss
         _currentFEN = State(initialValue: fen)
     }
     
@@ -32,6 +34,10 @@ struct ChessboardView: View {
                     castlingRights: $castlingRights,
                     isFlipped: $isFlipped,
                     onDismiss: {
+                        // Generate final FEN and call callback before dismissing
+                        let finalFEN = generateFEN()
+                        print("📝 Editor closing with FEN: \(finalFEN)")
+                        onEditorDismiss?(finalFEN)
                         dismiss()
                     }
                 )
@@ -783,9 +789,14 @@ struct LichessEditorView: View {
             }
         }
         .onChange(of: boardState) { _, newState in
-            print("🎯 Board state changed, now has \(newState.flatMap { $0 }.compactMap { $0 }.count) pieces")
+            let pieceCount = newState.flatMap { $0 }.compactMap { $0 }.count
+            print("🎯 Board state changed, now has \(pieceCount) pieces")
             // Re-evaluate when position changes
-            fetchCloudEvaluation()
+            // Add small delay to avoid rapid-fire API calls
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                print("🎯 Triggering evaluation after board change")
+                fetchCloudEvaluation()
+            }
         }
     }
     
@@ -1229,6 +1240,247 @@ struct LichessEditorView: View {
         fenString += " - 0 1"
         
         return fenString
+    }
+}
+
+// Simplified read-only chessboard for the captured photos screen
+struct SimplifiedChessboardView: View {
+    let fen: String
+    @State private var boardState: [[ChessPiece?]] = Array(repeating: Array(repeating: nil, count: 8), count: 8)
+    @State private var evaluation: ChessAPIEval? = nil
+    @State private var isLoadingEval: Bool = false
+    
+    var body: some View {
+        GeometryReader { geometry in
+            let totalWidth = geometry.size.width
+            let totalHeight = geometry.size.height
+            let availableWidth = totalWidth - 16
+            let boardSize = min(availableWidth - 28, totalHeight)
+            
+            HStack(spacing: 8) {
+                // Evaluation bar (left side)
+                evaluationBar
+                    .frame(width: 20, height: boardSize)
+                
+                // Chessboard
+                VStack(spacing: 0) {
+                    ForEach(0..<8, id: \.self) { row in
+                        HStack(spacing: 0) {
+                            ForEach(0..<8, id: \.self) { col in
+                                square(row: row, col: col, squareSize: boardSize / 8)
+                            }
+                        }
+                    }
+                }
+                .frame(width: boardSize, height: boardSize)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .onAppear {
+            parseFEN(fen)
+            fetchEvaluation()
+        }
+        .onChange(of: fen) { _, newFEN in
+            parseFEN(newFEN)
+            fetchEvaluation()
+        }
+    }
+    
+    private var evaluationBar: some View {
+        GeometryReader { geometry in
+            let height = geometry.size.height
+            let whiteAdvantage = evaluationToPercentage()
+            
+            ZStack(alignment: .bottom) {
+                // Black advantage (top)
+                Rectangle()
+                    .fill(Color.black)
+                
+                // White advantage (bottom)
+                Rectangle()
+                    .fill(Color.white)
+                    .frame(height: height * whiteAdvantage)
+                
+                // Evaluation text
+                if let eval = evaluation {
+                    Text(evaluationText(eval: eval))
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(whiteAdvantage > 0.5 ? .black : .white)
+                        .rotationEffect(.degrees(-90))
+                        .frame(maxHeight: .infinity)
+                }
+            }
+            .cornerRadius(3)
+        }
+    }
+    
+    private func evaluationToPercentage() -> CGFloat {
+        guard let eval = evaluation else {
+            return 0.5
+        }
+        
+        if let mate = eval.mate {
+            return mate > 0 ? 0.95 : 0.05
+        }
+        
+        if let evalValue = eval.eval {
+            let normalizedEval = evalValue / 10.0
+            let percentage = 0.5 + (normalizedEval / 2.0)
+            return CGFloat(max(0.05, min(0.95, percentage)))
+        }
+        
+        return 0.5
+    }
+    
+    private func evaluationText(eval: ChessAPIEval) -> String {
+        if let mate = eval.mate {
+            return "M\(abs(mate))"
+        }
+        
+        if let evalValue = eval.eval {
+            return String(format: "%.1f", evalValue)
+        }
+        
+        return "0.0"
+    }
+    
+    private func fetchEvaluation() {
+        // Validate FEN has required kings
+        let pieces = boardState.flatMap { $0 }.compactMap { $0 }
+        let whiteKings = pieces.filter { $0.type == "k" && $0.isWhite }.count
+        let blackKings = pieces.filter { $0.type == "k" && !$0.isWhite }.count
+        
+        if whiteKings != 1 || blackKings != 1 {
+            evaluation = nil
+            isLoadingEval = false
+            return
+        }
+        
+        guard let url = URL(string: "https://chess-api.com/v1") else {
+            return
+        }
+        
+        isLoadingEval = true
+        
+        Task {
+            do {
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                
+                let requestBody: [String: Any] = [
+                    "fen": fen,
+                    "depth": 15,
+                    "variants": 1
+                ]
+                request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+                
+                let (data, _) = try await URLSession.shared.data(for: request)
+                let decoder = JSONDecoder()
+                let result = try decoder.decode(ChessAPIEval.self, from: data)
+                
+                await MainActor.run {
+                    if result.type != "error" {
+                        evaluation = result
+                    } else {
+                        evaluation = nil
+                    }
+                    isLoadingEval = false
+                }
+            } catch {
+                await MainActor.run {
+                    evaluation = nil
+                    isLoadingEval = false
+                }
+            }
+        }
+    }
+    
+    private func square(row: Int, col: Int, squareSize: CGFloat) -> some View {
+        let isWhiteSquare = (row + col) % 2 == 0
+        let piece = boardState[row][col]
+        
+        return ZStack {
+            // Square background
+            Rectangle()
+                .fill(isWhiteSquare ?
+                      Color(red: 0.93, green: 0.89, blue: 0.78) :
+                      Color(red: 0.70, green: 0.53, blue: 0.39))
+                .frame(width: squareSize, height: squareSize)
+            
+            // Rank numbers on RIGHT edge - top-right corner
+            if col == 7 {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Text("\(8 - row)")
+                            .font(.system(size: squareSize * 0.22, weight: .bold))
+                            .foregroundColor(isWhiteSquare ?
+                                           Color(red: 0.70, green: 0.53, blue: 0.39).opacity(0.8) :
+                                           Color(red: 0.93, green: 0.89, blue: 0.78).opacity(0.8))
+                            .padding(.trailing, squareSize * 0.06)
+                            .padding(.top, squareSize * 0.03)
+                    }
+                    Spacer()
+                }
+                .frame(width: squareSize, height: squareSize)
+            }
+            
+            // File letters on BOTTOM edge - bottom-left corner
+            if row == 7 {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Text(String(Character(UnicodeScalar(97 + col)!)))
+                            .font(.system(size: squareSize * 0.22, weight: .bold))
+                            .foregroundColor(isWhiteSquare ?
+                                           Color(red: 0.70, green: 0.53, blue: 0.39).opacity(0.8) :
+                                           Color(red: 0.93, green: 0.89, blue: 0.78).opacity(0.8))
+                            .padding(.leading, squareSize * 0.06)
+                            .padding(.bottom, squareSize * 0.03)
+                        Spacer()
+                    }
+                }
+                .frame(width: squareSize, height: squareSize)
+            }
+            
+            // Piece
+            if let piece = piece {
+                Image(piece.imageName)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: squareSize * 0.75, height: squareSize * 0.75)
+            }
+        }
+        .frame(width: squareSize, height: squareSize)
+    }
+    
+    private func parseFEN(_ fen: String) {
+        let components = fen.components(separatedBy: " ")
+        guard components.count >= 1 else { return }
+        
+        let positionString = components[0]
+        let ranks = positionString.components(separatedBy: "/")
+        
+        boardState = Array(repeating: Array(repeating: nil, count: 8), count: 8)
+        
+        for (rankIndex, rank) in ranks.enumerated() {
+            var fileIndex = 0
+            for char in rank {
+                if char.isNumber {
+                    let emptyCount = Int(String(char)) ?? 0
+                    fileIndex += emptyCount
+                } else {
+                    if fileIndex < 8 && rankIndex < 8 {
+                        let isWhite = char.isUppercase
+                        let pieceType = char.lowercased()
+                        boardState[rankIndex][fileIndex] = ChessPiece(type: pieceType, isWhite: isWhite)
+                    }
+                    fileIndex += 1
+                }
+            }
+        }
     }
 }
 

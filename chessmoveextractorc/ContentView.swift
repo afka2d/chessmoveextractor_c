@@ -1358,6 +1358,13 @@ class CameraManager: NSObject, ObservableObject {
         capturedPhotos.removeAll { $0.id == id }
     }
     
+    func updatePhotoFEN(with id: UUID, newFEN: String) {
+        if let index = capturedPhotos.firstIndex(where: { $0.id == id }) {
+            capturedPhotos[index].positionResult?.fen = newFEN
+            print("📝 Updated FEN for photo \(id): \(newFEN)")
+        }
+    }
+    
     func detectInitialCorners(for photo: CapturedPhoto) async -> [CGPoint] {
         guard let imageData = photo.image.jpegData(compressionQuality: 0.8) else {
             print("❌ Failed to convert image to JPEG data")
@@ -1546,7 +1553,7 @@ struct CapturedPhoto: Identifiable {
     var isSendingCornersToAPI: Bool = false // Track if corners are being sent to API
     
     struct PositionResult {
-        let fen: String
+        var fen: String  // Changed to var so it can be updated after editing
     }
     
     struct CornersResult {
@@ -1588,6 +1595,7 @@ struct CapturedPhotosView: View {
     @State private var isDetectingCorners = false
     @State private var lastPhotoCount = 0
     @State private var editorFEN: String? = nil
+    @State private var editingPhotoForEditor: UUID? = nil  // Track which photo is being edited
     
     private func generateShareText(for photo: CapturedPhoto) -> String {
         var text = ""
@@ -1670,6 +1678,7 @@ struct CapturedPhotosView: View {
                                     self.editingPhotoId = nil
                                     self.isDetectingCorners = false
                                     print("📋 Opening board editor...")
+                                    self.editingPhotoForEditor = photo.id  // Track which photo we're editing
                                     self.editorFEN = fen  // This triggers the fullScreenCover
                                 } else {
                                     print("❌ No FEN found in updated photo")
@@ -1689,7 +1698,13 @@ struct CapturedPhotosView: View {
             get: { editorFEN.map { FENWrapper(fen: $0) } },
             set: { editorFEN = $0?.fen }
         )) { fenWrapper in
-            ChessboardView(fen: fenWrapper.fen, startInEditor: true)
+            ChessboardView(fen: fenWrapper.fen, startInEditor: true) { editedFEN in
+                // Save the edited FEN back to the photo
+                if let photoId = editingPhotoForEditor {
+                    cameraManager.updatePhotoFEN(with: photoId, newFEN: editedFEN)
+                    print("✅ Saved edited FEN to photo: \(editedFEN)")
+                }
+            }
         }
         .onAppear {
             lastPhotoCount = cameraManager.capturedPhotos.count
@@ -1733,221 +1748,75 @@ struct CapturedPhotosView: View {
     }
 
         private func photoCard(_ photo: CapturedPhoto) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Original photo with corner editing
-                VStack(alignment: .leading, spacing: 4) {
-                Text("Chess Photo")
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                
-                ZStack {
-            Image(uiImage: photo.image)
-                .resizable()
-                .scaledToFit()
-                .cornerRadius(8)
-                        .onTapGesture(count: 2) {
-                            print("🎯 Double-tap detected - starting corner detection flow")
-                            
-                            // Initialize corners with detected corners or manual corners
-                            Task {
-                                await MainActor.run {
-                                    print("🔄 Setting detecting state to true")
-                                    isDetectingCorners = true
-                                    // Initialize with default corners first
-                                    fullscreenCorners = [
+        GeometryReader { geometry in
+            let cardWidth = geometry.size.width
+            
+            HStack(spacing: 0) {
+                // Left: Photo (50% width)
+                Image(uiImage: photo.image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: cardWidth * 0.5, height: cardWidth * 0.5)
+                    .clipped()
+                    .onTapGesture {
+                        // Open corner editor on tap
+                        Task {
+                            await MainActor.run {
+                                isDetectingCorners = true
+                                fullscreenCorners = [
                                     CGPoint(x: 0, y: 0),
                                     CGPoint(x: 1, y: 0),
                                     CGPoint(x: 1, y: 1),
                                     CGPoint(x: 0, y: 1)
                                 ]
-                                    print("🔄 Set default corners: \(fullscreenCorners)")
-                                    // Open the editor immediately with default corners
-                                    editingPhotoId = EditingPhotoID(id: photo.id)
-                                    print("🔄 Opened corner editor")
-                                }
-                                
-                                let detectedCorners: [CGPoint]
-                                // Always detect corners automatically (ignore existing manual corners for fresh detection)
-                                print("🔄 Calling detectInitialCorners API...")
-                                detectedCorners = await cameraManager.detectInitialCorners(for: photo)
-                                print("🔄 Received detected corners: \(detectedCorners)")
-                                
-                                await MainActor.run {
-                                    print("🔄 Updating UI with detected corners")
-                                    // Update corners with detected ones
-                                    fullscreenCorners = detectedCorners
-                                    isDetectingCorners = false
-                                    print("🔄 Corner detection complete - UI updated")
-                                }
+                                editingPhotoId = EditingPhotoID(id: photo.id)
+                            }
+                            
+                            let detectedCorners = await cameraManager.detectInitialCorners(for: photo)
+                            await MainActor.run {
+                                fullscreenCorners = detectedCorners
+                                isDetectingCorners = false
                             }
                         }
-                    
-                    // Show corner overlay if manual corners are available
-                    if let manualCorners = photo.manualCorners, manualCorners.count == 4 {
-                        CornerOverlayView(corners: manualCorners, imageSize: photo.image.size)
                     }
-                    
-                    // Show loading indicator when detecting corners
-                    if isDetectingCorners {
-                        Rectangle()
-                            .fill(Color.black.opacity(0.6))
-                            .cornerRadius(8)
-                        
-                        VStack(spacing: 8) {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                .scaleEffect(1.2)
-                            Text("Detecting corners...")
-                                .font(.caption)
-                                .foregroundColor(.white)
-                        }
-                    }
-                }
-                .frame(height: 200)
-                .cornerRadius(8)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                )
                 
-                VStack(alignment: .leading, spacing: 4) {
-        HStack {
-                        Image(systemName: "pencil.circle.fill")
-                .foregroundColor(.blue)
-                        Text("Double-tap to edit corners")
-                            .font(.caption)
-                    .foregroundColor(.blue)
-                    }
-                    
-                    if photo.manualCorners != nil {
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                            Text("Manual corners applied")
-                                .font(.caption)
-                                .foregroundColor(.green)
+                // Right: Chessboard (50% width)
+                if let positionResult = photo.positionResult {
+                    SimplifiedChessboardView(fen: positionResult.fen)
+                        .frame(width: cardWidth * 0.5, height: cardWidth * 0.5)
+                } else {
+                    // Placeholder when no position available
+                    ZStack {
+                        Color.gray.opacity(0.2)
+                        VStack(spacing: 8) {
+                            if photo.isProcessing || photo.isSendingCornersToAPI {
+                                ProgressView()
+                                Text("Processing...")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else if photo.error != nil {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .font(.title)
+                                    .foregroundColor(.red)
+                                Text("Error")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            } else {
+                                Image(systemName: "square.grid.3x3")
+                                    .font(.title)
+                                    .foregroundColor(.gray)
+                                Text("Tap photo to analyze")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
+                    .frame(width: cardWidth * 0.5, height: cardWidth * 0.5)
                 }
-                .padding(.top, 4)
             }
-            .padding()
-            .background(Color.gray.opacity(0.05))
-                            .cornerRadius(8)
-                        
-            // Processing indicator
-            if photo.isProcessing {
-                HStack {
-                    ProgressView()
-                    Text("Processing...")
-                        .font(.caption)
-                }
-                .padding()
-                .background(Color.blue.opacity(0.1))
-        .cornerRadius(8)
-    }
-    
-            if photo.isSendingCornersToAPI {
-                                            HStack {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                    Text("Sending corners to API...")
-                                                        .font(.caption)
-                                                        .foregroundColor(.orange)
         }
-        .padding()
-                .background(Color.orange.opacity(0.1))
-        .cornerRadius(8)
-    }
-    
-            // Position result (complete API response)
-            if let positionResult = photo.positionResult {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("API Response Data")
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                    
-                    // FEN
-                    if !positionResult.fen.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("FEN:")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                            Text(positionResult.fen)
-                                .font(.caption)
-                                .foregroundColor(.primary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.blue.opacity(0.1))
-                                .cornerRadius(4)
-                        }
-                    }
-                    
-                    // Interactive Chessboard
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Interactive Chessboard:")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                        
-                        ChessboardView(fen: positionResult.fen)
-                            .frame(height: 300) // Reduced height for better fit
-                            .cornerRadius(8)
-                    }
-                    
-
-                    
-
-                    
-
-                    
-
-                    
-
-                    
-
-                    
-
-                    
-
-                    
-
-                }
-                .padding()
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(8)
-            }
-    
-            // Error display (simplified)
-            if let error = photo.error {
-                Text("Error: \(error)")
-                                        .font(.caption)
-                    .foregroundColor(.red)
-                    .padding()
-                    .background(Color.red.opacity(0.1))
-                                            .cornerRadius(8)
-                                        }
-            
-            if let apiErrors = photo.apiErrors, apiErrors.positionError != nil {
-                VStack(alignment: .leading, spacing: 4) {
-                    if let positionError = apiErrors.positionError {
-                        Text("Position Error: \(positionError)")
-                                            .font(.caption)
-                            .foregroundColor(.red)
-                    }
-                }
-                .padding()
-                .background(Color.red.opacity(0.1))
-                                        .cornerRadius(8)
-                                    }
-            
-            // Share button
-            shareButton(photo)
-                    }
-                    .padding()
-        .background(Color.white)
-                                    .cornerRadius(12)
+        .aspectRatio(2, contentMode: .fit)
+        .cornerRadius(12)
         .shadow(radius: 2)
     }
     
