@@ -1565,6 +1565,12 @@ struct EditingPhotoID: Identifiable, Equatable {
     let id: UUID
 }
 
+// Helper struct to wrap FEN for Identifiable conformance
+struct FENWrapper: Identifiable {
+    let id = UUID()
+    let fen: String
+}
+
 
 
 struct CapturedPhotosView: View {
@@ -1581,6 +1587,7 @@ struct CapturedPhotosView: View {
     @State private var fullscreenCorners: [CGPoint] = []
     @State private var isDetectingCorners = false
     @State private var lastPhotoCount = 0
+    @State private var editorFEN: String? = nil
     
     private func generateShareText(for photo: CapturedPhoto) -> String {
         var text = ""
@@ -1641,7 +1648,7 @@ struct CapturedPhotosView: View {
         }
         .fullScreenCover(item: $editingPhotoId) { editingId in
             if let photo = cameraManager.capturedPhotos.first(where: { $0.id == editingId.id }) {
-FullScreenCornerEditor(
+                FullScreenCornerEditor(
                     photo: photo,
                     corners: $fullscreenCorners,
                     isDetectingCorners: isDetectingCorners,
@@ -1654,17 +1661,21 @@ FullScreenCornerEditor(
                         Task {
                             await cameraManager.sendCorrectedCornersToAPI(for: photo.id, corners: corners)
                             
-                            // After API call completes, open Lichess if we have a FEN
+                            // After API call completes, open board editor if we have a FEN
                             await MainActor.run {
                                 if let updatedPhoto = cameraManager.capturedPhotos.first(where: { $0.id == photo.id }),
                                    let fen = updatedPhoto.positionResult?.fen {
-                                    let lichessURL = "https://lichess.org/editor/\(fen.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? fen)"
-                                    if let url = URL(string: lichessURL) {
-                                        UIApplication.shared.open(url)
-                                    }
+                                    print("📋 Setting editorFEN to: \(fen)")
+                                    print("📋 Closing corner editor...")
+                                    self.editingPhotoId = nil
+                                    self.isDetectingCorners = false
+                                    print("📋 Opening board editor...")
+                                    self.editorFEN = fen  // This triggers the fullScreenCover
+                                } else {
+                                    print("❌ No FEN found in updated photo")
+                                    self.editingPhotoId = nil
+                                    self.isDetectingCorners = false
                                 }
-                                editingPhotoId = nil
-                                isDetectingCorners = false
                             }
                         }
                     },
@@ -1673,6 +1684,12 @@ FullScreenCornerEditor(
                     }
                 )
             }
+        }
+        .fullScreenCover(item: Binding(
+            get: { editorFEN.map { FENWrapper(fen: $0) } },
+            set: { editorFEN = $0?.fen }
+        )) { fenWrapper in
+            ChessboardView(fen: fenWrapper.fen, startInEditor: true)
         }
         .onAppear {
             lastPhotoCount = cameraManager.capturedPhotos.count
@@ -3014,9 +3031,9 @@ struct FullScreenCornerEditor: View {
                                     .font(.title3)
                                     .fontWeight(.semibold)
                             } else {
-                                Image(systemName: "arrow.up.forward.app.fill")
+                                Image(systemName: "square.grid.3x3.fill")
                                     .font(.title3)
-                                Text("Open in Lichess")
+                                Text("Edit Position")
                                     .font(.title3)
                                     .fontWeight(.semibold)
                             }
