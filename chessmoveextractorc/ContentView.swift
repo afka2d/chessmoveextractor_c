@@ -1639,10 +1639,11 @@ struct CapturedPhotosView: View {
         }
         .fullScreenCover(item: $editingPhotoId) { editingId in
             if let photo = cameraManager.capturedPhotos.first(where: { $0.id == editingId.id }) {
-                FullScreenCornerEditor(
+FullScreenCornerEditor(
                     photo: photo,
                     corners: $fullscreenCorners,
                     isDetectingCorners: isDetectingCorners,
+                    cameraManager: cameraManager,
                     onDone: {
                         editingPhotoId = nil
                         isDetectingCorners = false
@@ -1650,9 +1651,20 @@ struct CapturedPhotosView: View {
                     onSendToAPI: { corners in
                         Task {
                             await cameraManager.sendCorrectedCornersToAPI(for: photo.id, corners: corners)
+                            
+                            // After API call completes, open Lichess if we have a FEN
+                            await MainActor.run {
+                                if let updatedPhoto = cameraManager.capturedPhotos.first(where: { $0.id == photo.id }),
+                                   let fen = updatedPhoto.positionResult?.fen {
+                                    let lichessURL = "https://lichess.org/editor/\(fen.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? fen)"
+                                    if let url = URL(string: lichessURL) {
+                                        UIApplication.shared.open(url)
+                                    }
+                                }
+                                editingPhotoId = nil
+                                isDetectingCorners = false
+                            }
                         }
-                        editingPhotoId = nil
-                        isDetectingCorners = false
                     },
                     onSaveGreyedImage: { greyedImage in
                         saveImageToPhotos(greyedImage)
@@ -2855,12 +2867,14 @@ struct FullScreenCornerEditor: View {
     let photo: CapturedPhoto
     @Binding var corners: [CGPoint]
     let isDetectingCorners: Bool
+    @ObservedObject var cameraManager: CameraManager
     let onDone: () -> Void
     let onSendToAPI: ([CGPoint]) -> Void
     let onSaveGreyedImage: (UIImage) -> Void
     @State private var isEditing = true
     @State private var selectedCornerIndex: Int? = nil
     @State private var isProcessing = false
+    @State private var hasAnimated = false
 
     var body: some View {
         ZStack {
@@ -2943,7 +2957,14 @@ struct FullScreenCornerEditor: View {
                 .padding()
                 Spacer()
                 VStack(spacing: 16) {
-                    // Large Analyze button
+                    // Instructional text
+                    Text("Manually adjust the board corners if necessary")
+                        .font(.title3)
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                    
+                    // Large Open in Lichess button
                     Button(action: {
                         isProcessing = true
                         onSendToAPI(corners)
@@ -2957,9 +2978,9 @@ struct FullScreenCornerEditor: View {
                                     .font(.title2)
                                     .fontWeight(.semibold)
                             } else {
-                                Image(systemName: "magnifyingglass.circle.fill")
+                                Image(systemName: "arrow.up.forward.app.fill")
                                     .font(.title2)
-                                Text("Analyze")
+                                Text("Open in Lichess")
                                     .font(.title2)
                                     .fontWeight(.semibold)
                             }
@@ -2988,13 +3009,6 @@ struct FullScreenCornerEditor: View {
                         }
                         
                         Spacer()
-                        
-                        Text("Drag corners to adjust, then tap Analyze")
-                                .font(.caption)
-                            .foregroundColor(.yellow)
-                            .multilineTextAlignment(.center)
-                        
-                        Spacer()
                     }
                 }
                         .padding(.bottom, 32)
@@ -3004,6 +3018,24 @@ struct FullScreenCornerEditor: View {
             print("🖼️ FullScreenCornerEditor appeared")
             print("🖼️ Initial corners: \(corners)")
             print("🖼️ Is detecting corners: \(isDetectingCorners)")
+            
+            // Animate corners to their detected positions
+            if !hasAnimated && corners.count == 4 {
+                let targetCorners = corners
+                // Start with corners in center
+                corners = [
+                    CGPoint(x: 0.5, y: 0.5),
+                    CGPoint(x: 0.5, y: 0.5),
+                    CGPoint(x: 0.5, y: 0.5),
+                    CGPoint(x: 0.5, y: 0.5)
+                ]
+                
+                // Animate to detected positions
+                withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) {
+                    corners = targetCorners
+                }
+                hasAnimated = true
+            }
         }
         .onChange(of: corners) { _, newCorners in
             print("🖼️ Corners changed to: \(newCorners)")
