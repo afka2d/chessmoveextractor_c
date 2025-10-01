@@ -1620,21 +1620,80 @@ struct CapturedPhotosView: View {
 
         var body: some View {
         NavigationView {
-            ScrollView {
-                LazyVStack(spacing: 16) {
-                    ForEach(cameraManager.capturedPhotos) { photo in
-                        photoCard(photo)
-                            .overlay(
-                                deleteButton(photo)
-                                    .padding(8),
-                                alignment: .topTrailing
+            ZStack {
+                // Dark gradient background
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(red: 0.1, green: 0.1, blue: 0.15),
+                        Color(red: 0.05, green: 0.05, blue: 0.1)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                
+                ScrollView {
+                    LazyVStack(spacing: 20) {
+                        ForEach(Array(cameraManager.capturedPhotos.enumerated()), id: \.element.id) { index, photo in
+                            VStack(spacing: 0) {
+                                // Row number badge
+                                HStack {
+                                    Text("#\(cameraManager.capturedPhotos.count - index)")
+                                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                                        .foregroundColor(.white.opacity(0.9))
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(
+                                            Capsule()
+                                                .fill(Color.blue.opacity(0.3))
+                                                .overlay(
+                                                    Capsule()
+                                                        .stroke(Color.blue.opacity(0.5), lineWidth: 1)
+                                                )
+                                        )
+                                    
+                                    Spacer()
+                                    
+                                    // Delete button
+                                    deleteButton(photo)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 12)
+                                
+                                // Photo card
+                                photoCard(photo)
+                            }
+                            .padding(16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 20)
+                                    .fill(Color.white.opacity(0.05))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 20)
+                                            .stroke(
+                                                LinearGradient(
+                                                    gradient: Gradient(colors: [
+                                                        Color.white.opacity(0.2),
+                                                        Color.white.opacity(0.05)
+                                                    ]),
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                ),
+                                                lineWidth: 1
+                                            )
+                                    )
+                                    .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: 5)
                             )
+                            .padding(.horizontal, 16)
+                        }
                     }
+                    .padding(.vertical, 20)
                 }
-                .padding()
             }
             .navigationTitle("Captured Photos")
             .navigationBarTitleDisplayMode(.large)
+            .toolbarBackground(Color(red: 0.1, green: 0.1, blue: 0.15), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
         }
         .sheet(isPresented: $showingShareSheet) {
             if let shareSheet = shareSheet {
@@ -1751,68 +1810,91 @@ struct CapturedPhotosView: View {
         GeometryReader { geometry in
             let cardWidth = geometry.size.width
             
-            HStack(spacing: 0) {
-                // Left: Photo (50% width)
-                Image(uiImage: photo.image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: cardWidth * 0.5, height: cardWidth * 0.5)
-                    .clipped()
-                    .onTapGesture {
-                        // Open corner editor on tap
-                        Task {
-                            await MainActor.run {
-                                isDetectingCorners = true
-                                fullscreenCorners = [
-                                    CGPoint(x: 0, y: 0),
-                                    CGPoint(x: 1, y: 0),
-                                    CGPoint(x: 1, y: 1),
-                                    CGPoint(x: 0, y: 1)
-                                ]
-                                editingPhotoId = EditingPhotoID(id: photo.id)
-                            }
-                            
-                            let detectedCorners = await cameraManager.detectInitialCorners(for: photo)
-                            await MainActor.run {
-                                fullscreenCorners = detectedCorners
-                                isDetectingCorners = false
-                            }
-                        }
-                    }
-                
-                // Right: Chessboard (50% width)
-                if let positionResult = photo.positionResult {
-                    SimplifiedChessboardView(fen: positionResult.fen)
+            ZStack(alignment: .topTrailing) {
+                HStack(spacing: 0) {
+                    // Left: Photo (50% width)
+                    Image(uiImage: photo.image)
+                        .resizable()
+                        .scaledToFill()
                         .frame(width: cardWidth * 0.5, height: cardWidth * 0.5)
-                } else {
-                    // Placeholder when no position available
-                    ZStack {
-                        Color.gray.opacity(0.2)
-                        VStack(spacing: 8) {
-                            if photo.isProcessing || photo.isSendingCornersToAPI {
-                                ProgressView()
-                                Text("Processing...")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            } else if photo.error != nil {
-                                Image(systemName: "exclamationmark.triangle")
-                                    .font(.title)
-                                    .foregroundColor(.red)
-                                Text("Error")
-                                    .font(.caption)
-                                    .foregroundColor(.red)
-                            } else {
-                                Image(systemName: "square.grid.3x3")
-                                    .font(.title)
-                                    .foregroundColor(.gray)
-                                Text("Tap photo to analyze")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                        .clipped()
+                        .onTapGesture {
+                            // Open corner editor on tap
+                            Task {
+                                await MainActor.run {
+                                    isDetectingCorners = true
+                                    fullscreenCorners = [
+                                        CGPoint(x: 0, y: 0),
+                                        CGPoint(x: 1, y: 0),
+                                        CGPoint(x: 1, y: 1),
+                                        CGPoint(x: 0, y: 1)
+                                    ]
+                                    editingPhotoId = EditingPhotoID(id: photo.id)
+                                }
+                                
+                                let detectedCorners = await cameraManager.detectInitialCorners(for: photo)
+                                await MainActor.run {
+                                    fullscreenCorners = detectedCorners
+                                    isDetectingCorners = false
+                                }
                             }
                         }
+                    
+                    // Right: Chessboard (50% width)
+                    if let positionResult = photo.positionResult {
+                        SimplifiedChessboardView(fen: positionResult.fen)
+                            .frame(width: cardWidth * 0.5, height: cardWidth * 0.5)
+                    } else {
+                        // Placeholder when no position available
+                        ZStack {
+                            Color.gray.opacity(0.2)
+                            VStack(spacing: 8) {
+                                if photo.isProcessing || photo.isSendingCornersToAPI {
+                                    ProgressView()
+                                    Text("Processing...")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                } else if photo.error != nil {
+                                    Image(systemName: "exclamationmark.triangle")
+                                        .font(.title)
+                                        .foregroundColor(.red)
+                                    Text("Error")
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                } else {
+                                    Image(systemName: "square.grid.3x3")
+                                        .font(.title)
+                                        .foregroundColor(.gray)
+                                    Text("Tap photo to analyze")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .frame(width: cardWidth * 0.5, height: cardWidth * 0.5)
                     }
-                    .frame(width: cardWidth * 0.5, height: cardWidth * 0.5)
                 }
+                
+                // Share button overlay (top-right)
+                Button(action: {
+                    var items: [Any] = []
+                    items.append(photo.image)
+                    let text = generateShareText(for: photo)
+                    items.append(text)
+                    shareSheet = ShareSheet(activityItems: items)
+                    showingShareSheet = true
+                }) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(
+                            Circle()
+                                .fill(Color.blue)
+                                .shadow(radius: 3)
+                        )
+                }
+                .padding(8)
             }
         }
         .aspectRatio(2, contentMode: .fit)
