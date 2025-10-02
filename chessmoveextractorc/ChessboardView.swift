@@ -1256,17 +1256,17 @@ struct SimplifiedChessboardView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            let totalWidth = geometry.size.width
             let totalHeight = geometry.size.height
-            let availableWidth = totalWidth - 16
-            let boardSize = min(availableWidth - 28, totalHeight)
+            // Make board height match the available height (photo height)
+            let boardSize = totalHeight
+            let evaluationBarWidth: CGFloat = 8  // Thinner evaluation bar
             
-            HStack(spacing: 8) {
-                // Evaluation bar (left side)
+            HStack(spacing: 4) {  // Reduced spacing
+                // Evaluation bar (left side) - thinner
                 evaluationBar
-                    .frame(width: 20, height: boardSize)
+                    .frame(width: evaluationBarWidth, height: boardSize)
                 
-                // Chessboard
+                // Chessboard - now matches photo height
                 VStack(spacing: 0) {
                     ForEach(0..<8, id: \.self) { row in
                         HStack(spacing: 0) {
