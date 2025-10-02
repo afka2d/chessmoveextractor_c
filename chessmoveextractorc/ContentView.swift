@@ -1872,10 +1872,19 @@ struct CapturedPhotosView: View {
                                     Text("Tap photo to analyze")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
+                                    Text("Double-tap to edit board")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                        .opacity(0.7)
                                 }
                             }
                         }
                         .frame(width: cardWidth * 0.5, height: cardWidth * 0.5)
+                        .onTapGesture(count: 2) {
+                            // Double-tap to open board editor with starting position
+                            editingPhotoForEditor = photo.id
+                            editorFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"  // Starting position
+                        }
                     }
                 }
                 
