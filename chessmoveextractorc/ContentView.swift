@@ -138,12 +138,14 @@ struct CameraView: View {
             set: { editorFEN = $0?.fen }
         )) { fenWrapper in
             ChessboardView(fen: fenWrapper.fen, startInEditor: true) { editedFEN in
+                print("🎨 Board editor dismissed with FEN: \(editedFEN)")
                 // Save the edited FEN back to the photo if we have one
                 if let photoId = editingPhotoForEditor {
                     cameraManager.updatePhotoFEN(with: photoId, newFEN: editedFEN)
                     print("✅ Saved edited FEN to photo: \(editedFEN)")
                 }
                 // Clear the editor state
+                print("🎨 Clearing board editor state")
                 editingPhotoForEditor = nil
                 editorFEN = nil
             }
@@ -165,6 +167,7 @@ struct CameraView: View {
                             
                             // After API call completes, open board editor if we have a FEN
                             await MainActor.run {
+                                print("🔍 API call completed, checking for FEN...")
                                 if let updatedPhoto = cameraManager.capturedPhotos.first(where: { $0.id == photo.id }),
                                    let fen = updatedPhoto.positionResult?.fen {
                                     print("📋 Setting editorFEN to: \(fen)")
@@ -174,6 +177,7 @@ struct CameraView: View {
                                     print("📋 Opening board editor...")
                                     self.editingPhotoForEditor = photo.id  // Track which photo we're editing
                                     self.editorFEN = fen  // This triggers the fullScreenCover
+                                    print("📋 Board editor state set - editingPhotoForEditor: \(self.editingPhotoForEditor), editorFEN: \(self.editorFEN)")
                                 } else {
                                     print("❌ No FEN found in updated photo")
                                     self.editingPhotoId = nil
@@ -181,6 +185,7 @@ struct CameraView: View {
                                     // Open board editor with starting position if no FEN
                                     self.editingPhotoForEditor = photo.id
                                     self.editorFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+                                    print("📋 Board editor state set with starting position - editingPhotoForEditor: \(self.editingPhotoForEditor), editorFEN: \(self.editorFEN)")
                                 }
                             }
                         }
@@ -194,8 +199,10 @@ struct CameraView: View {
         }
         .onChange(of: cameraManager.capturedPhotos.count) { _, newCount in
             // When a new photo is captured, automatically open corner selector
-            if newCount > lastPhotoCount && newCount > 0 {
+            // Only trigger if we're not already in the middle of processing a photo
+            if newCount > lastPhotoCount && newCount > 0 && editingPhotoId == nil && editorFEN == nil {
                 let latestPhoto = cameraManager.capturedPhotos.first!
+                print("📸 New photo captured, opening corner selector for photo: \(latestPhoto.id)")
                 editingPhotoId = EditingPhotoID(id: latestPhoto.id)
                 isDetectingCorners = true
                 fullscreenCorners = [
