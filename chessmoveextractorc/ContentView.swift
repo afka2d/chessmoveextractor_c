@@ -2639,8 +2639,36 @@ struct FullScreenCornerEditor: View {
             print("🖼️ Initial corners: \(corners)")
             print("🖼️ Is detecting corners: \(isDetectingCorners)")
             
-            // Animate corners to their detected positions
-            if !hasAnimated && corners.count == 4 {
+            // Start corner detection if needed
+            if isDetectingCorners {
+                Task {
+                    let detectedCorners = await cameraManager.detectInitialCorners(for: photo)
+                    await MainActor.run {
+                        print("🎯 Corner detection completed: \(detectedCorners)")
+                        corners = detectedCorners
+                        isDetectingCorners = false
+                        
+                        // Animate corners to their detected positions
+                        if !hasAnimated && corners.count == 4 {
+                            let targetCorners = corners
+                            // Start with corners in center
+                            corners = [
+                                CGPoint(x: 0.5, y: 0.5),
+                                CGPoint(x: 0.5, y: 0.5),
+                                CGPoint(x: 0.5, y: 0.5),
+                                CGPoint(x: 0.5, y: 0.5)
+                            ]
+                            
+                            // Animate to detected positions
+                            withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) {
+                                corners = targetCorners
+                            }
+                            hasAnimated = true
+                        }
+                    }
+                }
+            } else if !hasAnimated && corners.count == 4 {
+                // Animate corners to their detected positions
                 let targetCorners = corners
                 // Start with corners in center
                 corners = [
