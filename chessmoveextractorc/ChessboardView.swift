@@ -578,6 +578,32 @@ struct ChessAPIEval: Codable {
     let text: String?
     let winChance: Double?
     let centipawns: String?
+    
+    // Custom decoding to handle mate as either string or int
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        type = try container.decodeIfPresent(String.self, forKey: .type)
+        error = try container.decodeIfPresent(String.self, forKey: .error)
+        eval = try container.decodeIfPresent(Double.self, forKey: .eval)
+        move = try container.decodeIfPresent(String.self, forKey: .move)
+        depth = try container.decodeIfPresent(Int.self, forKey: .depth)
+        continuationArr = try container.decodeIfPresent([String].self, forKey: .continuationArr)
+        text = try container.decodeIfPresent(String.self, forKey: .text)
+        winChance = try container.decodeIfPresent(Double.self, forKey: .winChance)
+        centipawns = try container.decodeIfPresent(String.self, forKey: .centipawns)
+        
+        // Handle mate as either string or int
+        if let mateString = try? container.decodeIfPresent(String.self, forKey: .mate) {
+            mate = Int(mateString)
+        } else {
+            mate = try container.decodeIfPresent(Int.self, forKey: .mate)
+        }
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case type, error, eval, move, mate, depth, continuationArr, text, winChance, centipawns
+    }
 }
 
 // Fullscreen Lichess-style Editor
