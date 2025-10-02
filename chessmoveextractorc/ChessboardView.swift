@@ -621,6 +621,7 @@ struct LichessEditorView: View {
     @State private var isLoadingEval: Bool = false
     @State private var positionError: String? = nil
     @State private var selectedBoardPiece: (row: Int, col: Int)? = nil
+    @State private var lastEvaluatedFEN: String? = nil
     
     var body: some View {
         ZStack {
@@ -817,14 +818,16 @@ struct LichessEditorView: View {
         .onChange(of: boardState) { oldState, newState in
             let oldPieceCount = oldState.flatMap { $0 }.compactMap { $0 }.count
             let newPieceCount = newState.flatMap { $0 }.compactMap { $0 }.count
-            print("🎯 Board state changed from \(oldPieceCount) to \(newPieceCount) pieces")
-            print("🎯 Old state: \(oldState)")
-            print("🎯 New state: \(newState)")
-            // Re-evaluate when position changes
-            // Add small delay to avoid rapid-fire API calls
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                print("🎯 Triggering evaluation after board change")
-                fetchCloudEvaluation()
+            
+            // Only log and evaluate if there's an actual change
+            if oldState != newState {
+                print("🎯 Board state changed from \(oldPieceCount) to \(newPieceCount) pieces")
+                // Re-evaluate when position changes
+                // Add small delay to avoid rapid-fire API calls
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    print("🎯 Triggering evaluation after board change")
+                    fetchCloudEvaluation()
+                }
             }
         }
     }
@@ -935,13 +938,10 @@ struct LichessEditorView: View {
                 boardState[row][col] = ChessPiece(type: pieceType, isWhite: selectedPieceColor)
                 print("🎯 Placed piece at (\(row), \(col))")
             }
-            // Force state update and evaluation
+            // Force state update - onChange will handle evaluation
             let newState = boardState
             boardState = newState
-            print("🎯 Board state updated, triggering evaluation")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                fetchCloudEvaluation()
-            }
+            print("🎯 Board state updated")
         }
         // If no palette piece selected, select the board piece for removal
         else if boardState[row][col] != nil {
@@ -972,9 +972,6 @@ struct LichessEditorView: View {
         GeometryReader { geometry in
             let height = geometry.size.height
             let whiteAdvantage = evaluationToPercentage()
-            
-            // Debug print
-            let _ = print("🔍 LichessEditorView Evaluation bar - evaluation: \(evaluation?.eval ?? 0), whiteAdvantage: \(whiteAdvantage)")
             
             ZStack(alignment: .bottom) {
                 // Black advantage (top)
@@ -1106,6 +1103,18 @@ struct LichessEditorView: View {
     private func fetchCloudEvaluation() {
         let fen = generateFEN()
         
+        // Skip if we already evaluated this exact position
+        if lastEvaluatedFEN == fen {
+            print("🔍 Skipping evaluation - same FEN as last evaluation: \(fen)")
+            return
+        }
+        
+        // Skip if already loading
+        if isLoadingEval {
+            print("🔍 Skipping evaluation - already loading")
+            return
+        }
+        
         // Validate FEN has required kings
         let pieces = boardState.flatMap { $0 }.compactMap { $0 }
         let whiteKings = pieces.filter { $0.type == "k" && $0.isWhite }.count
@@ -1121,6 +1130,7 @@ struct LichessEditorView: View {
             positionError = errorMsg
             evaluation = nil
             isLoadingEval = false
+            lastEvaluatedFEN = fen
             print("❌ \(errorMsg)")
             return
         }
@@ -1197,6 +1207,7 @@ struct LichessEditorView: View {
                         print("🔍 Evaluation state updated - evaluation: \(evaluation?.eval ?? 0)")
                     }
                     isLoadingEval = false
+                    lastEvaluatedFEN = fen
                 }
             } catch {
                 await MainActor.run {
