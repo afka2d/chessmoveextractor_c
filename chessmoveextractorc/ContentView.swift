@@ -87,6 +87,10 @@ struct CameraView: View {
     @Binding var selectedTab: Int
     @State private var editorFEN: String? = nil
     @State private var editingPhotoForEditor: UUID? = nil
+    @State private var editingPhotoId: EditingPhotoID? = nil
+    @State private var fullscreenCorners: [CGPoint] = []
+    @State private var isDetectingCorners = false
+    @State private var lastPhotoCount = 0
     
     var body: some View {
         ZStack {
@@ -144,18 +148,63 @@ struct CameraView: View {
                 editorFEN = nil
             }
         }
+        .fullScreenCover(item: $editingPhotoId) { editingId in
+            if let photo = cameraManager.capturedPhotos.first(where: { $0.id == editingId.id }) {
+                FullScreenCornerEditor(
+                    photo: photo,
+                    corners: $fullscreenCorners,
+                    isDetectingCorners: isDetectingCorners,
+                    cameraManager: cameraManager,
+                    onDone: {
+                        editingPhotoId = nil
+                        isDetectingCorners = false
+                    },
+                    onSendToAPI: { corners in
+                        Task {
+                            await cameraManager.sendCorrectedCornersToAPI(for: photo.id, corners: corners)
+                            
+                            // After API call completes, open board editor if we have a FEN
+                            await MainActor.run {
+                                if let updatedPhoto = cameraManager.capturedPhotos.first(where: { $0.id == photo.id }),
+                                   let fen = updatedPhoto.positionResult?.fen {
+                                    print("📋 Setting editorFEN to: \(fen)")
+                                    print("📋 Closing corner editor...")
+                                    self.editingPhotoId = nil
+                                    self.isDetectingCorners = false
+                                    print("📋 Opening board editor...")
+                                    self.editingPhotoForEditor = photo.id  // Track which photo we're editing
+                                    self.editorFEN = fen  // This triggers the fullScreenCover
+                                } else {
+                                    print("❌ No FEN found in updated photo")
+                                    self.editingPhotoId = nil
+                                    self.isDetectingCorners = false
+                                    // Open board editor with starting position if no FEN
+                                    self.editingPhotoForEditor = photo.id
+                                    self.editorFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+                                }
+                            }
+                        }
+                    },
+                    onSaveGreyedImage: { greyedImage in
+                        // Save greyed image to photos if needed
+                        UIImageWriteToSavedPhotosAlbum(greyedImage, nil, nil, nil)
+                    }
+                )
+            }
+        }
         .onChange(of: cameraManager.capturedPhotos.count) { _, newCount in
-            // When a new photo is captured, automatically open board editor
-            if newCount > 0 {
+            // When a new photo is captured, automatically open corner selector
+            if newCount > lastPhotoCount && newCount > 0 {
                 let latestPhoto = cameraManager.capturedPhotos.first!
-                if let positionResult = latestPhoto.positionResult {
-                    editingPhotoForEditor = latestPhoto.id
-                    editorFEN = positionResult.fen
-                } else {
-                    // If no position detected, open editor with starting position
-                    editingPhotoForEditor = latestPhoto.id
-                    editorFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-                }
+                editingPhotoId = EditingPhotoID(id: latestPhoto.id)
+                isDetectingCorners = true
+                fullscreenCorners = [
+                    CGPoint(x: 0, y: 0),
+                    CGPoint(x: 1, y: 0),
+                    CGPoint(x: 1, y: 1),
+                    CGPoint(x: 0, y: 1)
+                ]
+                lastPhotoCount = newCount
             }
         }
     }
