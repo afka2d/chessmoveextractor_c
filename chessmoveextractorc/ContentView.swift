@@ -1842,8 +1842,12 @@ struct CapturedPhotosView: View {
                     
                     // Right: Chessboard (50% width)
                     if let positionResult = photo.positionResult {
-                        SimplifiedChessboardView(fen: positionResult.fen)
-                            .frame(width: cardWidth * 0.5, height: cardWidth * 0.5)
+                        SimplifiedChessboardView(fen: positionResult.fen) {
+                            // Double-tap to open board editor
+                            editingPhotoForEditor = photo.id
+                            editorFEN = positionResult.fen
+                        }
+                        .frame(width: cardWidth * 0.5, height: cardWidth * 0.5)
                     } else {
                         // Placeholder when no position available
                         ZStack {

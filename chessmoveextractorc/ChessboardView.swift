@@ -1250,9 +1250,15 @@ struct LichessEditorView: View {
 // Simplified read-only chessboard for the captured photos screen
 struct SimplifiedChessboardView: View {
     let fen: String
+    let onDoubleTap: (() -> Void)?  // Optional callback for double-tap
     @State private var boardState: [[ChessPiece?]] = Array(repeating: Array(repeating: nil, count: 8), count: 8)
     @State private var evaluation: ChessAPIEval? = nil
     @State private var isLoadingEval: Bool = false
+    
+    init(fen: String, onDoubleTap: (() -> Void)? = nil) {
+        self.fen = fen
+        self.onDoubleTap = onDoubleTap
+    }
     
     var body: some View {
         GeometryReader { geometry in
@@ -1277,6 +1283,9 @@ struct SimplifiedChessboardView: View {
                     }
                 }
                 .frame(width: boardSize, height: boardSize)
+                .onTapGesture(count: 2) {
+                    onDoubleTap?()
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
