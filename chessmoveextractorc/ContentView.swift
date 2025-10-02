@@ -1902,9 +1902,7 @@ struct CapturedPhotosView: View {
         .shadow(radius: 2)
     }
     
-    
-    
-        private func sendCorrectedCornersToAPI(photo: CapturedPhoto, corners: [CGPoint]) {
+    private func sendCorrectedCornersToAPI(photo: CapturedPhoto, corners: [CGPoint]) {
         Task {
             // Send the image with manually adjusted corners to the API
             await cameraManager.sendCorrectedCornersToAPI(for: photo.id, corners: corners)
