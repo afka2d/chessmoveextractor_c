@@ -934,6 +934,9 @@ struct LichessEditorView: View {
             let height = geometry.size.height
             let whiteAdvantage = evaluationToPercentage()
             
+            // Debug print
+            let _ = print("🔍 LichessEditorView Evaluation bar - evaluation: \(evaluation?.eval ?? 0), whiteAdvantage: \(whiteAdvantage)")
+            
             ZStack(alignment: .bottom) {
                 // Black advantage (top)
                 Rectangle()
@@ -1152,6 +1155,7 @@ struct LichessEditorView: View {
                         positionError = nil
                         print("✅ Chess-API eval: \(result.eval ?? 0.0), mate: \(result.mate ?? 0)")
                         print("✅ Best move: \(result.move ?? "none")")
+                        print("🔍 Evaluation state updated - evaluation: \(evaluation?.eval ?? 0)")
                     }
                     isLoadingEval = false
                 }
