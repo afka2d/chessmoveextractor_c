@@ -134,10 +134,18 @@ struct CameraView: View {
             cameraManager.stopSession()
         }
         .fullScreenCover(item: Binding(
-            get: { editorFEN.map { FENWrapper(fen: $0) } },
-            set: { editorFEN = $0?.fen }
-        )) { fenWrapper in
-            ChessboardView(fen: fenWrapper.fen, startInEditor: true) { editedFEN in
+            get: { 
+                let result = editorFEN.map { FENWrapper(fen: $0) }
+                print("🔍 fullScreenCover getter called - editorFEN: \(editorFEN ?? "nil"), result: \(result?.fen ?? "nil")")
+                return result
+            },
+            set: { 
+                print("🔍 fullScreenCover setter called - new value: \($0?.fen ?? "nil")")
+                editorFEN = $0?.fen 
+            }
+        )) { (fenWrapper: FENWrapper) in
+            print("🎨 Board editor opening with FEN: \(fenWrapper.fen)")
+            return ChessboardView(fen: fenWrapper.fen, startInEditor: true) { editedFEN in
                 print("🎨 Board editor dismissed with FEN: \(editedFEN)")
                 // Save the edited FEN back to the photo if we have one
                 if let photoId = editingPhotoForEditor {
@@ -168,6 +176,13 @@ struct CameraView: View {
                             // After API call completes, open board editor if we have a FEN
                             await MainActor.run {
                                 print("🔍 API call completed, checking for FEN...")
+                                
+                                // Prevent multiple board editor openings
+                                guard self.editorFEN == nil else {
+                                    print("⚠️ Board editor already open, skipping...")
+                                    return
+                                }
+                                
                                 if let updatedPhoto = cameraManager.capturedPhotos.first(where: { $0.id == photo.id }),
                                    let fen = updatedPhoto.positionResult?.fen {
                                     print("📋 Setting editorFEN to: \(fen)")
