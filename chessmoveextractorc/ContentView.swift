@@ -153,7 +153,7 @@ struct CameraView: View {
                 FullScreenCornerEditor(
                     photo: photo,
                     corners: $fullscreenCorners,
-                    isDetectingCorners: isDetectingCorners,
+                    isDetectingCorners: $isDetectingCorners,
                     cameraManager: cameraManager,
                     onDone: {
                         editingPhotoId = nil
@@ -2430,7 +2430,7 @@ struct DebugImageCornerDotView: View {
 struct FullScreenCornerEditor: View {
     let photo: CapturedPhoto
     @Binding var corners: [CGPoint]
-    let isDetectingCorners: Bool
+    @Binding var isDetectingCorners: Bool
     @ObservedObject var cameraManager: CameraManager
     let onDone: () -> Void
     let onSendToAPI: ([CGPoint]) -> Void
