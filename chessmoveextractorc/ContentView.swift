@@ -91,6 +91,7 @@ struct CameraView: View {
     @State private var fullscreenCorners: [CGPoint] = []
     @State private var isDetectingCorners = false
     @State private var lastPhotoCount = 0
+    @State private var showBoardEditor = false
     
     var body: some View {
         ZStack {
@@ -133,29 +134,28 @@ struct CameraView: View {
         .onDisappear {
             cameraManager.stopSession()
         }
-        .fullScreenCover(item: Binding(
-            get: { 
-                let result = editorFEN.map { FENWrapper(fen: $0) }
-                print("🔍 fullScreenCover getter called - editorFEN: \(editorFEN ?? "nil"), result: \(result?.fen ?? "nil")")
-                return result
-            },
-            set: { 
-                print("🔍 fullScreenCover setter called - new value: \($0?.fen ?? "nil")")
-                editorFEN = $0?.fen 
-            }
-        )) { (fenWrapper: FENWrapper) in
-            print("🎨 Board editor opening with FEN: \(fenWrapper.fen)")
-            return ChessboardView(fen: fenWrapper.fen, startInEditor: true) { editedFEN in
-                print("🎨 Board editor dismissed with FEN: \(editedFEN)")
-                // Save the edited FEN back to the photo if we have one
-                if let photoId = editingPhotoForEditor {
-                    cameraManager.updatePhotoFEN(with: photoId, newFEN: editedFEN)
-                    print("✅ Saved edited FEN to photo: \(editedFEN)")
+        .fullScreenCover(isPresented: $showBoardEditor) {
+            Group {
+                if let fen = editorFEN {
+                    ChessboardView(fen: fen, startInEditor: true) { editedFEN in
+                        print("🎨 Board editor dismissed with FEN: \(editedFEN)")
+                        // Save the edited FEN back to the photo if we have one
+                        if let photoId = editingPhotoForEditor {
+                            cameraManager.updatePhotoFEN(with: photoId, newFEN: editedFEN)
+                            print("✅ Saved edited FEN to photo: \(editedFEN)")
+                        }
+                        // Clear the editor state
+                        print("🎨 Clearing board editor state")
+                        editingPhotoForEditor = nil
+                        editorFEN = nil
+                        showBoardEditor = false
+                    }
+                    .onAppear {
+                        print("🎨 Board editor opening with FEN: \(fen)")
+                    }
+                } else {
+                    EmptyView()
                 }
-                // Clear the editor state
-                print("🎨 Clearing board editor state")
-                editingPhotoForEditor = nil
-                editorFEN = nil
             }
         }
         .fullScreenCover(item: $editingPhotoId) { editingId in
@@ -191,7 +191,8 @@ struct CameraView: View {
                                     self.isDetectingCorners = false
                                     print("📋 Opening board editor...")
                                     self.editingPhotoForEditor = photo.id  // Track which photo we're editing
-                                    self.editorFEN = fen  // This triggers the fullScreenCover
+                                    self.editorFEN = fen  // Set the FEN
+                                    self.showBoardEditor = true  // Trigger the fullScreenCover
                                     print("📋 Board editor state set - editingPhotoForEditor: \(self.editingPhotoForEditor), editorFEN: \(self.editorFEN)")
                                 } else {
                                     print("❌ No FEN found in updated photo")
@@ -200,6 +201,7 @@ struct CameraView: View {
                                     // Open board editor with starting position if no FEN
                                     self.editingPhotoForEditor = photo.id
                                     self.editorFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+                                    self.showBoardEditor = true  // Trigger the fullScreenCover
                                     print("📋 Board editor state set with starting position - editingPhotoForEditor: \(self.editingPhotoForEditor), editorFEN: \(self.editorFEN)")
                                 }
                             }
