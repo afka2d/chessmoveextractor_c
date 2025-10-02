@@ -788,9 +788,12 @@ struct LichessEditorView: View {
                 fetchCloudEvaluation()
             }
         }
-        .onChange(of: boardState) { _, newState in
-            let pieceCount = newState.flatMap { $0 }.compactMap { $0 }.count
-            print("🎯 Board state changed, now has \(pieceCount) pieces")
+        .onChange(of: boardState) { oldState, newState in
+            let oldPieceCount = oldState.flatMap { $0 }.compactMap { $0 }.count
+            let newPieceCount = newState.flatMap { $0 }.compactMap { $0 }.count
+            print("🎯 Board state changed from \(oldPieceCount) to \(newPieceCount) pieces")
+            print("🎯 Old state: \(oldState)")
+            print("🎯 New state: \(newState)")
             // Re-evaluate when position changes
             // Add small delay to avoid rapid-fire API calls
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
@@ -892,16 +895,24 @@ struct LichessEditorView: View {
     }
     
     private func handleSquareTap(row: Int, col: Int) {
+        print("🎯 Square tapped at row: \(row), col: \(col)")
+        print("🎯 Selected piece type: \(selectedPieceType ?? "nil")")
+        print("🎯 Selected piece color: \(selectedPieceColor)")
+        
         // If a piece from palette is selected, place or delete
         if let pieceType = selectedPieceType {
+            print("🎯 Placing piece: \(pieceType) (\(selectedPieceColor ? "white" : "black")) at (\(row), \(col))")
             if pieceType == "delete" {
                 boardState[row][col] = nil
+                print("🎯 Deleted piece at (\(row), \(col))")
             } else {
                 boardState[row][col] = ChessPiece(type: pieceType, isWhite: selectedPieceColor)
+                print("🎯 Placed piece at (\(row), \(col))")
             }
             // Force state update and evaluation
             let newState = boardState
             boardState = newState
+            print("🎯 Board state updated, triggering evaluation")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 fetchCloudEvaluation()
             }
@@ -909,10 +920,12 @@ struct LichessEditorView: View {
         // If no palette piece selected, select the board piece for removal
         else if boardState[row][col] != nil {
             selectedBoardPiece = (row, col)
+            print("🎯 Selected board piece at (\(row), \(col))")
         }
         // If tapping empty square with board piece selected, cancel selection
         else {
             selectedBoardPiece = nil
+            print("🎯 Cancelled piece selection")
         }
     }
     
