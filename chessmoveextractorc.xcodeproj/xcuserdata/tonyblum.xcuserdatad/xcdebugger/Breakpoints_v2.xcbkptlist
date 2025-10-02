@@ -16,8 +16,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "500"
             endingLineNumber = "500"
-            landmarkName = "VideoPlayerManager"
-            landmarkType = "3">
+            landmarkName = "setupPlayer(with:)"
+            landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -32,7 +32,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "513"
             endingLineNumber = "513"
-            landmarkName = "updateCurrentPosition(time:)"
+            landmarkName = "setupPlayer(with:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
