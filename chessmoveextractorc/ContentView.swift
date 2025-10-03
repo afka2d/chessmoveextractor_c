@@ -238,7 +238,8 @@ struct CameraView: View {
             // When a new photo is captured, automatically open corner selector
             // Only trigger if we're not already in the middle of processing a photo
             if newCount > lastPhotoCount && newCount > 0 && editingPhotoId == nil && editorFEN == nil {
-                let latestPhoto = cameraManager.capturedPhotos.first!
+                // Get the latest photo (last in array since we append new photos)
+                let latestPhoto = cameraManager.capturedPhotos.last!
                 print("📸 New photo captured, opening corner selector for photo: \(latestPhoto.id)")
                 editingPhotoId = EditingPhotoID(id: latestPhoto.id)
                 isDetectingCorners = true
