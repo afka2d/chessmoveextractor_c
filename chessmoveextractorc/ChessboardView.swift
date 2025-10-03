@@ -1048,7 +1048,7 @@ struct LichessEditorView: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.white.opacity(0.5))
                     
-                    Text(continuation.prefix(5).map { formatMoveWithPiece(move: $0) }.joined(separator: " "))
+                    Text(continuation.prefix(5).joined(separator: " "))
                         .font(.system(size: 13, weight: .medium, design: .monospaced))
                         .foregroundColor(.white.opacity(0.9))
                 }
