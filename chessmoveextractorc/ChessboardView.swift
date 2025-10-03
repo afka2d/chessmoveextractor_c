@@ -579,7 +579,7 @@ struct ChessAPIEval: Codable {
     let winChance: Double?
     let centipawns: String?
     
-    // Custom decoding to handle mate as either string or int
+    // Custom decoding to handle mate as either string or int, and centipawns as either string or int
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
@@ -591,13 +591,21 @@ struct ChessAPIEval: Codable {
         continuationArr = try container.decodeIfPresent([String].self, forKey: .continuationArr)
         text = try container.decodeIfPresent(String.self, forKey: .text)
         winChance = try container.decodeIfPresent(Double.self, forKey: .winChance)
-        centipawns = try container.decodeIfPresent(String.self, forKey: .centipawns)
         
         // Handle mate as either string or int
         if let mateString = try? container.decodeIfPresent(String.self, forKey: .mate) {
             mate = Int(mateString)
         } else {
             mate = try container.decodeIfPresent(Int.self, forKey: .mate)
+        }
+        
+        // Handle centipawns as either string or int
+        if let centipawnsString = try? container.decodeIfPresent(String.self, forKey: .centipawns) {
+            centipawns = centipawnsString
+        } else if let centipawnsInt = try? container.decodeIfPresent(Int.self, forKey: .centipawns) {
+            centipawns = String(centipawnsInt)
+        } else {
+            centipawns = nil
         }
     }
     
