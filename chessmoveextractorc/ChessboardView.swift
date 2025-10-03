@@ -641,7 +641,29 @@ struct LichessEditorView: View {
                     .fill(.white.opacity(0.4))
                     .frame(width: 36, height: 4)
                     .padding(.top, 8)
-                    .padding(.bottom, 12)
+                    .padding(.bottom, 8)
+                
+                // Open in Lichess button
+                Button(action: openInLichess) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "globe")
+                            .font(.system(size: 14, weight: .medium))
+                        Text("Open in Lichess")
+                            .font(.system(size: 14, weight: .medium))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 20)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 20)
+                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                            )
+                    )
+                }
+                .padding(.bottom, 16)
                 
                 // Main chessboard with evaluation bar
                 Spacer(minLength: 20)
