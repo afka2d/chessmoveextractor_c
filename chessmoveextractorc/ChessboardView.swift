@@ -819,15 +819,15 @@ struct LichessEditorView: View {
             let oldPieceCount = oldState.flatMap { $0 }.compactMap { $0 }.count
             let newPieceCount = newState.flatMap { $0 }.compactMap { $0 }.count
             
-            // Only log and evaluate if there's an actual change
-            if oldState != newState {
-                print("🎯 Board state changed from \(oldPieceCount) to \(newPieceCount) pieces")
-                // Re-evaluate when position changes
-                // Add small delay to avoid rapid-fire API calls
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    print("🎯 Triggering evaluation after board change")
-                    fetchCloudEvaluation()
-                }
+            print("🎯 Board state changed from \(oldPieceCount) to \(newPieceCount) pieces")
+            print("🎯 Old state: \(oldState)")
+            print("🎯 New state: \(newState)")
+            
+            // Always trigger evaluation when board state changes
+            // Add small delay to avoid rapid-fire API calls
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                print("🎯 Triggering evaluation after board change")
+                fetchCloudEvaluation()
             }
         }
     }
@@ -1102,6 +1102,10 @@ struct LichessEditorView: View {
     
     private func fetchCloudEvaluation() {
         let fen = generateFEN()
+        
+        print("🔍 fetchCloudEvaluation called with FEN: \(fen)")
+        print("🔍 Last evaluated FEN: \(lastEvaluatedFEN ?? "nil")")
+        print("🔍 Is loading: \(isLoadingEval)")
         
         // Skip if we already evaluated this exact position
         if lastEvaluatedFEN == fen {
