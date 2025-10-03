@@ -2874,13 +2874,13 @@ struct DismissibleMessageView: View {
             DragGesture()
                 .onChanged { value in
                     isDragging = true
-                    dragOffset = value.translation.x
+                    dragOffset = value.translation.width
                 }
                 .onEnded { value in
                     isDragging = false
                     
                     // If dragged far enough, dismiss the message
-                    if abs(value.translation.x) > 100 {
+                    if abs(value.translation.width) > 100 {
                         withAnimation(.easeOut(duration: 0.3)) {
                             isVisible = false
                         }
