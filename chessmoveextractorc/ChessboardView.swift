@@ -650,14 +650,15 @@ struct LichessEditorView: View {
                     let totalWidth = geometry.size.width
                     let totalHeight = geometry.size.height
                     // Account for padding and eval bar
-                    let availableWidth = totalWidth - 40  // 8px padding each side + margins
+                    let availableWidth = totalWidth - 24  // Reduced padding for larger board
                     let availableHeight = totalHeight
-                    let boardSize = min(availableWidth - 36, availableHeight)  // 36 = eval bar (24) + spacing (12)
+                    let evaluationBarWidth: CGFloat = 28  // Increased from 20
+                    let boardSize = min(availableWidth - evaluationBarWidth - 8, availableHeight)  // 8 = spacing
                     
                     HStack(spacing: 8) {
                         // Evaluation bar (left side) - exact board height
                         evaluationBar
-                            .frame(width: 20, height: boardSize)
+                            .frame(width: evaluationBarWidth, height: boardSize)
                         
                         // Chessboard
                         editorChessboard
@@ -665,7 +666,7 @@ struct LichessEditorView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 8)
                 
                 // Position error message or best move display
                 if let error = positionError {
