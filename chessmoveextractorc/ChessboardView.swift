@@ -98,11 +98,11 @@ struct ChessboardView: View {
             handleSquareTap(row: row, col: col)
         }) {
             ZStack {
-                // Exact Lichess brown theme colors
+                // Custom blue-gray theme colors
                 Rectangle()
                     .fill(isWhiteSquare ? 
-                          Color(red: 0.93, green: 0.89, blue: 0.78) :  // Light squares: warm cream
-                          Color(red: 0.70, green: 0.53, blue: 0.39))   // Dark squares: warm brown
+                          Color(red: 0.95, green: 0.95, blue: 0.97) :  // Light squares: cool white
+                          Color(red: 0.45, green: 0.55, blue: 0.65))   // Dark squares: blue-gray
                     .frame(width: 36, height: 36)
                     .overlay(
                         Rectangle()
@@ -118,8 +118,8 @@ struct ChessboardView: View {
                         Text("\(8 - row)")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundColor(isWhiteSquare ? 
-                                           Color(red: 0.70, green: 0.53, blue: 0.39).opacity(0.8) : 
-                                           Color(red: 0.93, green: 0.89, blue: 0.78).opacity(0.8))
+                                           Color(red: 0.45, green: 0.55, blue: 0.65).opacity(0.8) : 
+                                           Color(red: 0.95, green: 0.95, blue: 0.97).opacity(0.8))
                             .padding(.trailing, 2)
                             .padding(.top, 1)
                     }
@@ -132,8 +132,8 @@ struct ChessboardView: View {
                         Text(String(Character(UnicodeScalar(97 + col)!)))
                             .font(.system(size: 10, weight: .bold))
                             .foregroundColor(isWhiteSquare ? 
-                                           Color(red: 0.70, green: 0.53, blue: 0.39).opacity(0.8) : 
-                                           Color(red: 0.93, green: 0.89, blue: 0.78).opacity(0.8))
+                                           Color(red: 0.45, green: 0.55, blue: 0.65).opacity(0.8) : 
+                                           Color(red: 0.95, green: 0.95, blue: 0.97).opacity(0.8))
                             .padding(.leading, 2)
                             .padding(.bottom, 1)
                     }
@@ -870,8 +870,8 @@ struct LichessEditorView: View {
             ZStack {
                 Rectangle()
                     .fill(isWhiteSquare ?
-                          Color(red: 0.93, green: 0.89, blue: 0.78) :
-                          Color(red: 0.70, green: 0.53, blue: 0.39))
+                          Color(red: 0.95, green: 0.95, blue: 0.97) :
+                          Color(red: 0.45, green: 0.55, blue: 0.65))
                     .frame(width: squareSize, height: squareSize)
                     .overlay(
                         Rectangle()
@@ -1525,8 +1525,8 @@ struct SimplifiedChessboardView: View {
             // Square background
             Rectangle()
                 .fill(isWhiteSquare ?
-                      Color(red: 0.93, green: 0.89, blue: 0.78) :
-                      Color(red: 0.70, green: 0.53, blue: 0.39))
+                      Color(red: 0.95, green: 0.95, blue: 0.97) :
+                      Color(red: 0.45, green: 0.55, blue: 0.65))
                 .frame(width: squareSize, height: squareSize)
             
             // Rank numbers on RIGHT edge - top-right corner
