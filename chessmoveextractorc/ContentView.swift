@@ -92,9 +92,13 @@ struct CameraView: View {
     @State private var isDetectingCorners = false
     @State private var lastPhotoCount = 0
     @State private var showBoardEditor = false
+    @State private var showCameraMessage = true
     
     var body: some View {
         ZStack {
+            // Set consistent background color to prevent white flash
+            Color.black.ignoresSafeArea()
+            
             CameraPreviewView(session: cameraManager.session)
                 .ignoresSafeArea()
             
@@ -103,6 +107,16 @@ struct CameraView: View {
             }
             
             VStack {
+                // Camera instruction message
+                if showCameraMessage {
+                    DismissibleMessageView(
+                        message: "Take a photo of the board from the white side",
+                        isVisible: $showCameraMessage
+                    )
+                    .padding(.top, 50)
+                    .padding(.horizontal, 20)
+                }
+                
                 Spacer()
                 
                 HStack {
@@ -130,6 +144,7 @@ struct CameraView: View {
         .onAppear {
             cameraManager.startSession()
             cameraManager.selectedTabBinding = $selectedTab
+            showCameraMessage = true  // Always show message when screen loads
         }
         .onDisappear {
             cameraManager.stopSession()
@@ -137,7 +152,11 @@ struct CameraView: View {
         .fullScreenCover(isPresented: $showBoardEditor) {
             Group {
                 if let fen = editorFEN {
-                    ChessboardView(fen: fen, startInEditor: true) { editedFEN in
+                    ZStack {
+                        // Set consistent background color to prevent white flash
+                        Color.black.ignoresSafeArea()
+                        
+                        ChessboardView(fen: fen, startInEditor: true) { editedFEN in
                         print("🎨 Board editor dismissed with FEN: \(editedFEN)")
                         // Save the edited FEN back to the photo if we have one
                         if let photoId = editingPhotoForEditor {
@@ -152,6 +171,7 @@ struct CameraView: View {
                     }
                     .onAppear {
                         print("🎨 Board editor opening with FEN: \(fen)")
+                    }
                     }
                 } else {
                     EmptyView()
@@ -2464,6 +2484,7 @@ struct FullScreenCornerEditor: View {
     @State private var isProcessing = false
     @State private var hasAnimated = false
     @State private var dragOffset: CGFloat = 0
+    @State private var showCornerMessage = true
 
     var body: some View {
         ZStack {
@@ -2560,31 +2581,13 @@ struct FullScreenCornerEditor: View {
                 // Bottom: Instructions and button
                 VStack(spacing: 14) {
                     // Instructional text with glass morphism effect
-                    VStack(spacing: 8) {
-                        Text("Manually adjust the board corners as necessary")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
-                            .multilineTextAlignment(.center)
-                        
-                        Text("Board corners should be inside the algebraic notation around the chess board right on the a1, a8, h1, h8 corners")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.9))
-                            .multilineTextAlignment(.center)
-                            .lineSpacing(3)
+                    if showCornerMessage {
+                        DismissibleMessageView(
+                            message: "Manually adjust the board corners as necessary\n\nBoard corners should be inside the algebraic notation around the chess board right on the a1, a8, h1, h8 corners",
+                            isVisible: $showCornerMessage
+                        )
+                        .padding(.horizontal, 20)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(.ultraThinMaterial)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                            )
-                    )
-                    .shadow(color: Color.black.opacity(0.3), radius: 16, x: 0, y: 8)
-                    .padding(.horizontal, 20)
                     
                     // Large Open in Lichess button with glass effect
                     Button(action: {
@@ -2662,6 +2665,7 @@ struct FullScreenCornerEditor: View {
             print("🖼️ FullScreenCornerEditor appeared")
             print("🖼️ Initial corners: \(corners)")
             print("🖼️ Is detecting corners: \(isDetectingCorners)")
+            showCornerMessage = true  // Always show message when screen loads
             
             // Start corner detection if needed
             if isDetectingCorners {
@@ -2834,6 +2838,61 @@ func cornerLabel(for index: Int) -> String {
     case 2: return "h1" // bottom-right
     case 3: return "a1" // bottom-left
     default: return ""
+    }
+}
+
+// Dismissible message view with swipe-to-dismiss functionality
+struct DismissibleMessageView: View {
+    let message: String
+    @Binding var isVisible: Bool
+    @State private var dragOffset: CGFloat = 0
+    @State private var isDragging = false
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(message)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.white)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                )
+        )
+        .shadow(color: Color.black.opacity(0.3), radius: 16, x: 0, y: 8)
+        .offset(x: dragOffset)
+        .opacity(isDragging ? 0.7 : 1.0)
+        .scaleEffect(isDragging ? 0.95 : 1.0)
+        .gesture(
+            DragGesture()
+                .onChanged { value in
+                    isDragging = true
+                    dragOffset = value.translation.x
+                }
+                .onEnded { value in
+                    isDragging = false
+                    
+                    // If dragged far enough, dismiss the message
+                    if abs(value.translation.x) > 100 {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            isVisible = false
+                        }
+                    } else {
+                        // Snap back to original position
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            dragOffset = 0
+                        }
+                    }
+                }
+        )
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: dragOffset)
     }
 }
 
