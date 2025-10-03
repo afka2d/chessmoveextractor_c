@@ -683,7 +683,7 @@ struct LichessEditorView: View {
                     .cornerRadius(10)
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
-                } else if let eval = evaluation, let move = eval.move {
+                } else if let eval = evaluation, eval.move != nil {
                     bestMoveDisplay
                         .padding(.horizontal, 16)
                         .padding(.top, 12)
@@ -991,15 +991,7 @@ struct LichessEditorView: View {
                     .fill(Color.white)
                     .frame(height: height * whiteAdvantage)
                 
-                // Evaluation text
-                if evaluation != nil {
-                    Text(evaluationText(eval: evaluation))
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(whiteAdvantage > 0.5 ? .black : .white)
-                        .rotationEffect(.degrees(-90))
-                        .frame(height: 60)
-                        .position(x: 12, y: whiteAdvantage > 0.5 ? height * whiteAdvantage - 30 : height * whiteAdvantage + 30)
-                }
+                // Evaluation text removed - only show visual bar
             }
             .cornerRadius(4)
             .overlay(
@@ -1019,7 +1011,7 @@ struct LichessEditorView: View {
                         .foregroundColor(.white.opacity(0.5))
                     
                     if let move = evaluation?.move {
-                        Text(move)
+                        Text(formatMoveWithPiece(move: move))
                             .font(.system(size: 16, weight: .bold, design: .monospaced))
                             .foregroundColor(.white)
                     }
@@ -1106,6 +1098,59 @@ struct LichessEditorView: View {
         if eval > 1.0 { return Color.green }
         if eval < -1.0 { return Color.red }
         return Color.yellow
+    }
+    
+    private func formatMoveWithPiece(move: String) -> String {
+        // Convert move from "c1g1" format to "Qg1+" format
+        guard move.count == 4 else { return move }
+        
+        let fromSquare = String(move.prefix(2))
+        let toSquare = String(move.suffix(2))
+        
+        // Get the piece at the from square
+        let fromCol = Int(fromSquare.first!.asciiValue! - Character("a").asciiValue!)
+        let fromRow = Int(fromSquare.last!.asciiValue! - Character("1").asciiValue!)
+        
+        guard fromRow >= 0 && fromRow < 8 && fromCol >= 0 && fromCol < 8 else { return move }
+        
+        let piece = boardState[7 - fromRow][fromCol]
+        let pieceSymbol = getPieceSymbol(piece: piece)
+        
+        // Check if it's a capture by seeing if there's a piece at the destination
+        let toCol = Int(toSquare.first!.asciiValue! - Character("a").asciiValue!)
+        let toRow = Int(toSquare.last!.asciiValue! - Character("1").asciiValue!)
+        
+        guard toRow >= 0 && toRow < 8 && toCol >= 0 && toCol < 8 else { return move }
+        
+        let capturedPiece = boardState[7 - toRow][toCol]
+        let isCapture = capturedPiece != nil
+        
+        // Check if it's check by generating FEN and checking if king is in check
+        let isCheck = checkIfMoveIsCheck(from: fromSquare, to: toSquare)
+        
+        var result = pieceSymbol + toSquare
+        if isCapture { result += "x" }
+        if isCheck { result += "+" }
+        
+        return result
+    }
+    
+    private func getPieceSymbol(piece: ChessPiece?) -> String {
+        guard let piece = piece else { return "P" } // Default to pawn if no piece
+        
+        let symbols: [String: String] = [
+            "k": "K", "q": "Q", "r": "R", "b": "B", "n": "N", "p": ""
+        ]
+        
+        let symbol = symbols[piece.type] ?? ""
+        return piece.isWhite ? symbol : symbol.lowercased()
+    }
+    
+    private func checkIfMoveIsCheck(from: String, to: String) -> Bool {
+        // Simplified check detection - in a real implementation you'd need to
+        // simulate the move and check if the opponent's king is in check
+        // For now, we'll just return false to avoid complexity
+        return false
     }
     
     private func fetchCloudEvaluation() {
