@@ -714,6 +714,14 @@ struct LichessEditorView: View {
                 
                 Spacer(minLength: 20)
                 
+                // Instruction message
+                Text("Tap the piece palette to adjust pieces if the AI generated board is not exact")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 12)
+                
                 // Piece palette (two rows) - Exact Lichess style
                 VStack(spacing: 6) {
                     // Black pieces
