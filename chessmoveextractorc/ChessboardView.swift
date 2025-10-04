@@ -1089,7 +1089,10 @@ struct LichessEditorView: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.white.opacity(0.5))
                     
-                    Text(continuation.prefix(5).map { formatContinuationMove(move: $0) }.joined(separator: " "))
+                    Text(continuation.prefix(5).compactMap { move in
+                        let formatted = formatContinuationMove(move: move)
+                        return formatted.isEmpty ? nil : formatted
+                    }.joined(separator: " "))
                         .font(.system(size: 13, weight: .medium, design: .monospaced))
                         .foregroundColor(.white.opacity(0.9))
                 }
@@ -1194,35 +1197,43 @@ struct LichessEditorView: View {
     
     private func formatContinuationMove(move: ContinuationMove) -> String {
         // Convert continuation move from coordinates to standard notation
-        guard let from = move.from, let to = move.to else { return "" }
+        guard let from = move.from, let to = move.to else { 
+            print("🔍 formatContinuationMove: missing from/to coordinates")
+            return "" 
+        }
         
-        let moveString = from + to
+        print("🔍 formatContinuationMove: \(from) to \(to)")
         
-        // Get the piece at the from square
+        // For continuation moves, we can't rely on current board state
+        // since these are future moves. Use a simplified approach:
+        // Just return the coordinate notation for now, or try to determine piece from common patterns
+        
+        // Check if it's a pawn move (no piece symbol needed for pawns)
         let fromCol = Int(from.first!.asciiValue! - Character("a").asciiValue!)
         let fromRow = Int(from.last!.asciiValue! - Character("1").asciiValue!)
-        
-        guard fromRow >= 0 && fromRow < 8 && fromCol >= 0 && fromCol < 8 else { return moveString }
-        
-        let piece = boardState[7 - fromRow][fromCol]
-        let pieceSymbol = getPieceSymbol(piece: piece)
-        
-        // Check if it's a capture by seeing if there's a piece at the destination
         let toCol = Int(to.first!.asciiValue! - Character("a").asciiValue!)
         let toRow = Int(to.last!.asciiValue! - Character("1").asciiValue!)
         
-        guard toRow >= 0 && toRow < 8 && toCol >= 0 && toCol < 8 else { return moveString }
+        guard fromRow >= 0 && fromRow < 8 && fromCol >= 0 && fromCol < 8,
+              toRow >= 0 && toRow < 8 && toCol >= 0 && toCol < 8 else { 
+            print("🔍 formatContinuationMove: invalid coordinates")
+            return from + to 
+        }
         
+        // Try to get piece from current board state (this might not be accurate for future moves)
+        let piece = boardState[7 - fromRow][fromCol]
+        let pieceSymbol = getPieceSymbol(piece: piece)
+        
+        // Check if it's a capture
         let capturedPiece = boardState[7 - toRow][toCol]
         let isCapture = capturedPiece != nil
         
-        // Check if it's check (simplified - always false for continuation moves)
-        let isCheck = false
-        
-        var result = pieceSymbol + to
+        // Format correctly: piece + capture indicator + destination + check
+        var result = pieceSymbol
         if isCapture { result += "x" }
-        if isCheck { result += "+" }
+        result += to
         
+        print("🔍 formatContinuationMove result: \(result)")
         return result
     }
     
