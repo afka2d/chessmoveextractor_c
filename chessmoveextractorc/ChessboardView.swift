@@ -566,6 +566,14 @@ struct ChessPiece: Equatable {
     }
 }
 
+// Chess-API.com Continuation Move
+struct ContinuationMove: Codable {
+    let from: String?
+    let to: String?
+    let fromNumeric: String?
+    let toNumeric: String?
+}
+
 // Chess-API.com Evaluation Response
 struct ChessAPIEval: Codable {
     let type: String?  // "move", "bestmove", "error"
@@ -575,6 +583,7 @@ struct ChessAPIEval: Codable {
     let mate: Int?
     let depth: Int?
     let continuationArr: [String]?
+    let continuation: [ContinuationMove]?
     let text: String?
     let winChance: Double?
     let centipawns: String?
@@ -589,6 +598,7 @@ struct ChessAPIEval: Codable {
         move = try container.decodeIfPresent(String.self, forKey: .move)
         depth = try container.decodeIfPresent(Int.self, forKey: .depth)
         continuationArr = try container.decodeIfPresent([String].self, forKey: .continuationArr)
+        continuation = try container.decodeIfPresent([ContinuationMove].self, forKey: .continuation)
         text = try container.decodeIfPresent(String.self, forKey: .text)
         winChance = try container.decodeIfPresent(Double.self, forKey: .winChance)
         
@@ -609,9 +619,9 @@ struct ChessAPIEval: Codable {
         }
     }
     
-    private enum CodingKeys: String, CodingKey {
-        case type, error, eval, move, mate, depth, continuationArr, text, winChance, centipawns
-    }
+        private enum CodingKeys: String, CodingKey {
+            case type, error, eval, move, mate, depth, continuationArr, continuation, text, winChance, centipawns
+        }
 }
 
 // Fullscreen Lichess-style Editor
@@ -1073,13 +1083,29 @@ struct LichessEditorView: View {
             .cornerRadius(10)
             
             // Continuation line
-            if let continuation = evaluation?.continuationArr, !continuation.isEmpty {
+            if let continuation = evaluation?.continuation, !continuation.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Continuation")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.white.opacity(0.5))
                     
-                    Text(continuation.prefix(5).joined(separator: " "))
+                    Text(continuation.prefix(5).map { formatContinuationMove(move: $0) }.joined(separator: " "))
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.9))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color.white.opacity(0.05))
+                .cornerRadius(8)
+            } else if let continuationArr = evaluation?.continuationArr, !continuationArr.isEmpty {
+                // Fallback to old format if new format not available
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Continuation")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.5))
+                    
+                    Text(continuationArr.prefix(5).joined(separator: " "))
                         .font(.system(size: 13, weight: .medium, design: .monospaced))
                         .foregroundColor(.white.opacity(0.9))
                 }
@@ -1160,6 +1186,40 @@ struct LichessEditorView: View {
         let isCheck = checkIfMoveIsCheck(from: fromSquare, to: toSquare)
         
         var result = pieceSymbol + toSquare
+        if isCapture { result += "x" }
+        if isCheck { result += "+" }
+        
+        return result
+    }
+    
+    private func formatContinuationMove(move: ContinuationMove) -> String {
+        // Convert continuation move from coordinates to standard notation
+        guard let from = move.from, let to = move.to else { return "" }
+        
+        let moveString = from + to
+        
+        // Get the piece at the from square
+        let fromCol = Int(from.first!.asciiValue! - Character("a").asciiValue!)
+        let fromRow = Int(from.last!.asciiValue! - Character("1").asciiValue!)
+        
+        guard fromRow >= 0 && fromRow < 8 && fromCol >= 0 && fromCol < 8 else { return moveString }
+        
+        let piece = boardState[7 - fromRow][fromCol]
+        let pieceSymbol = getPieceSymbol(piece: piece)
+        
+        // Check if it's a capture by seeing if there's a piece at the destination
+        let toCol = Int(to.first!.asciiValue! - Character("a").asciiValue!)
+        let toRow = Int(to.last!.asciiValue! - Character("1").asciiValue!)
+        
+        guard toRow >= 0 && toRow < 8 && toCol >= 0 && toCol < 8 else { return moveString }
+        
+        let capturedPiece = boardState[7 - toRow][toCol]
+        let isCapture = capturedPiece != nil
+        
+        // Check if it's check (simplified - always false for continuation moves)
+        let isCheck = false
+        
+        var result = pieceSymbol + to
         if isCapture { result += "x" }
         if isCheck { result += "+" }
         
