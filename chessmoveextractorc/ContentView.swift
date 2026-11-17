@@ -1138,8 +1138,8 @@ class DebugLogger {
 }
 
 class LocalChessService {
-    private let recognizeURL = "http://159.203.102.249:8010/recognize_chess_position_with_corners"
-    private let detectCornersURL = "http://159.203.102.249:8011/detect_corners"
+    private let recognizeURL = "https://api.chesspositionscanner.store/recognize_chess_position_with_corners"
+    private let detectCornersURL = "https://api.chesspositionscanner.store/detect_corners"
     private let debugLogger = DebugLogger()
     
     func recognizePositionWithCorners(imageData: Data, corners: [CGPoint]) async throws -> (ChessPositionResponse?, String?, [String: UIImage]?) {
